@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "products": {
+      "title": "products",
+      "description": "Store products catalog",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "titleFa": { "type": "string" },
+        "brand": { "type": "string" },
+        "price": { "type": "number" },
+        "originalPrice": { "type": "number" },
+        "discount": { "type": "number" },
+        "image": { "type": "string" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "specs": { "type": "object" },
+        "rating": { "type": "number" },
+        "reviewsCount": { "type": "number" },
+        "isNew": { "type": "boolean" },
+        "isBestSeller": { "type": "boolean" },
+        "color": { "type": "array", "items": { "type": "string" } },
+        "inStock": { "type": "boolean" },
+        "stockCount": { "type": "number" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "features": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["titleFa", "price", "brand", "stockCount"]
+    },
+    "orders": {
+      "title": "orders",
+      "description": "User orders",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userPhone": { "type": "string" },
+        "userName": { "type": "string" },
+        "items": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "discountAmount": { "type": "number" },
+        "payableAmount": { "type": "number" },
+        "discountCode": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "deliveryAddress": { "type": "string" }
+      },
+      "required": ["userId", "items", "payableAmount", "status"]
+    },
+    "reviews": {
+      "title": "reviews",
+      "description": "Product reviews and ratings",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhone": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["productId", "rating", "comment", "status"]
+    },
+    "repair_requests": {
+      "title": "repair_requests",
+      "description": "Device repair bookings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "phone": { "type": "string" },
+        "deviceModel": { "type": "string" },
+        "issueType": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userName", "phone", "deviceModel", "issueType"]
+    },
+    "profiles": {
+      "title": "profiles",
+      "description": "User profiles and roles",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    }
+  }
+}
