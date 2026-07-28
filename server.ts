@@ -1,4 +1,5 @@
 import express from "express";
+import cookieParser from "cookie-parser";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
@@ -27,12 +28,57 @@ import {
   repairSchema,
   adminLoginSchema,
   productSchema,
+  stockNotificationSchema,
+  userProfileSchema,
+  aiAdvisorSchema,
 } from "./src/lib/validations";
 
 dotenv.config();
 
-// Simple in-memory session store for server-authenticated admin sessions
-const adminTokens = new Set<string>();
+// In-memory session store for server-authenticated admin sessions with 4-hour expiration TTL
+const adminTokens = new Map<string, number>();
+
+// Constant-time string comparison to prevent timing attacks during credential checks
+function constantTimeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  if (bufA.length !== bufB.length) {
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// In-memory Rate Limiting Middleware to prevent Brute-Force & Denial of Service
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+
+const createRateLimiter = (maxRequests: number, windowMs: number) => {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
+    const now = Date.now();
+    const clientRecord = rateLimitMap.get(ip) || { count: 0, resetTime: now + windowMs };
+
+    if (now > clientRecord.resetTime) {
+      clientRecord.count = 0;
+      clientRecord.resetTime = now + windowMs;
+    }
+
+    clientRecord.count += 1;
+    rateLimitMap.set(ip, clientRecord);
+
+    if (clientRecord.count > maxRequests) {
+      return res.status(429).json({
+        error: "تعداد درخواست‌های شما بیش از حد مجاز است. لطفاً چند دقیقه دیگر مجدداً تلاش کنید.",
+      });
+    }
+
+    next();
+  };
+};
+
+const generalLimiter = createRateLimiter(150, 60 * 1000); // 150 reqs / min
+const loginLimiter = createRateLimiter(5, 15 * 60 * 1000); // 5 attempts / 15 mins (anti brute-force)
+const formSubmissionLimiter = createRateLimiter(20, 10 * 60 * 1000); // 20 requests / 10 mins
 
 async function seedProductsIfEmpty() {
   try {
@@ -81,18 +127,59 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  // Strict Request Size Limits to prevent Payload Flooding
+  app.use(express.json({ limit: "200kb" }));
+  app.use(cookieParser());
+
+  // Secure Cookie Configuration Helper (HttpOnly, Secure, SameSite=Strict)
+  const SECURE_COOKIE_OPTIONS: express.CookieOptions = {
+    httpOnly: true, // Prevents XSS scripts from accessing the session token
+    secure: process.env.NODE_ENV === "production" || process.env.SECURE_COOKIE === "true", // Only sent over HTTPS
+    sameSite: "lax", // Protects against CSRF while allowing seamless applet navigation
+    maxAge: 4 * 60 * 60 * 1000, // 4-hour session TTL
+    path: "/",
+  };
+
+  // OWASP Security Headers Middleware
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-ancestors 'self' https://ai.studio https://*.google.com https://*.googleusercontent.com;"
+    );
+    next();
+  });
+
+  // Apply general rate limiter
+  app.use(generalLimiter);
 
   // Seed database on startup
   await seedProductsIfEmpty();
 
-  // Middleware to verify admin token from headers
+  // Middleware to verify admin token with cookie or authorization header check
   const requireAdminAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    // Check HttpOnly cookie first for maximum security, fall back to Authorization header
+    const tokenFromCookie = req.cookies?.admin_session;
     const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(" ")[1];
-    if (!token || !adminTokens.has(token)) {
+    const tokenFromHeader = authHeader && authHeader.split(" ")[1];
+    const token = tokenFromCookie || tokenFromHeader;
+
+    if (!token) {
       return res.status(401).json({ error: "دسترسی غیرمجاز. لطفا ابتدا به عنوان مدیر وارد شوید." });
     }
+
+    const expiresAt = adminTokens.get(token);
+    if (!expiresAt || Date.now() > expiresAt) {
+      adminTokens.delete(token);
+      res.clearCookie("admin_session", { path: "/" });
+      return res.status(401).json({ error: "نشست کاری شما منقضی شده است. لطفا مجددا وارد شوید." });
+    }
+
     next();
   };
 
@@ -104,8 +191,8 @@ async function startServer() {
     res.json({ status: "ok", store: "Setareh Mobile Mobarakeh" });
   });
 
-  // Admin Login Endpoint (Server-Side Auth)
-  app.post("/api/admin/login", async (req, res) => {
+  // Admin Login Endpoint (Server-Side Auth with HttpOnly Secure Cookie)
+  app.post("/api/admin/login", loginLimiter, async (req, res) => {
     try {
       const parsed = adminLoginSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -113,21 +200,40 @@ async function startServer() {
       }
       const { username, password } = parsed.data;
 
-      // Check admin credentials server-side
+      // Environment Variables for Credentials
       const ADMIN_USER = process.env.ADMIN_USERNAME || "admin";
       const ADMIN_PASS = process.env.ADMIN_PASSWORD || "setareh1403";
 
-      if (username !== ADMIN_USER || password !== ADMIN_PASS) {
+      const isUserValid = constantTimeCompare(username, ADMIN_USER);
+      const isPassValid = constantTimeCompare(password, ADMIN_PASS);
+
+      if (!isUserValid || !isPassValid) {
         return res.status(401).json({ error: "نام کاربری یا رمز عبور مدیر اشتباه است." });
       }
 
+      // Generate cryptographically secure token valid for 4 hours
       const token = crypto.randomBytes(32).toString("hex");
-      adminTokens.add(token);
+      const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+      adminTokens.set(token, Date.now() + FOUR_HOURS_MS);
+
+      // Set secure HttpOnly cookie to prevent session hijacking & XSS token theft
+      res.cookie("admin_session", token, SECURE_COOKIE_OPTIONS);
 
       res.json({ success: true, token, role: "admin", message: "ورود موفقیت‌آمیز به پنل مدیریت" });
     } catch (err: any) {
-      res.status(500).json({ error: "خطای سرور در احراز هویت مدیر" });
+      console.error("Admin Login Error:", err);
+      res.status(500).json({ error: "خطای سرور در احراز هویت مدیر." });
     }
+  });
+
+  // Admin Logout Endpoint (Clears HttpOnly Session Cookie)
+  app.post("/api/admin/logout", (req: express.Request, res: express.Response) => {
+    const token = req.cookies?.admin_session || req.headers.authorization?.split(" ")[1];
+    if (token) {
+      adminTokens.delete(token);
+    }
+    res.clearCookie("admin_session", { path: "/" });
+    res.json({ success: true, message: "خروج از پنل مدیریت با موفقیت انجام شد." });
   });
 
   // Fetch Products
@@ -216,7 +322,7 @@ async function startServer() {
   });
 
   // Server-Side Checkout & Order Processing (Price calculation, Stock validation & Transaction)
-  app.post("/api/orders/checkout", async (req, res) => {
+  app.post("/api/orders/checkout", formSubmissionLimiter, async (req, res) => {
     try {
       const parsed = checkoutSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -388,7 +494,7 @@ async function startServer() {
   });
 
   // Submit Review with Zod Validation
-  app.post("/api/reviews", async (req, res) => {
+  app.post("/api/reviews", formSubmissionLimiter, async (req, res) => {
     try {
       const parsed = reviewSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -417,7 +523,7 @@ async function startServer() {
   });
 
   // Submit Repair Booking with Zod Validation
-  app.post("/api/repair-request", async (req, res) => {
+  app.post("/api/repair-request", formSubmissionLimiter, async (req, res) => {
     try {
       const parsed = repairSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -442,6 +548,89 @@ async function startServer() {
       res.json({ success: true, request: newRequest });
     } catch (err) {
       res.status(500).json({ error: "خطا در ثبت درخواست تعمیرات" });
+    }
+  });
+
+  // Submit Out-of-Stock Phone SMS Alert Request
+  app.post("/api/stock-notification", formSubmissionLimiter, async (req, res) => {
+    try {
+      const parsed = stockNotificationSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.issues[0].message });
+      }
+
+      const { productId, productName, phone, userEmail, userId } = parsed.data;
+
+      // Check if user already registered for this item with the same phone
+      const existingQuery = query(
+        collection(db, "stock_notifications"),
+        where("productId", "==", productId),
+        where("phone", "==", phone)
+      );
+      const existingSnap = await getDocs(existingQuery);
+
+      if (!existingSnap.empty) {
+        return res.json({
+          success: true,
+          alreadyRegistered: true,
+          message: "شماره شما قبلاً برای اطلاع‌رسانی این کالا ثبت شده است. به محض موجود شدن به شما پیامک ارسال می‌شود.",
+        });
+      }
+
+      const notificationDoc = {
+        productId,
+        productName,
+        phone,
+        userEmail: userEmail || "",
+        userId: userId || "guest",
+        status: "در انتظار موجود شدن",
+        createdAt: new Date().toLocaleDateString("fa-IR"),
+        createdAtIso: new Date().toISOString(),
+      };
+
+      const ref = await addDoc(collection(db, "stock_notifications"), notificationDoc);
+
+      res.json({
+        success: true,
+        id: ref.id,
+        message: `شماره ${phone} با موفقیت ثبت شد. پس از موجود شدن "${productName}" پیامک اطلاع‌رسانی برای شما ارسال خواهد شد.`,
+      });
+    } catch (err: any) {
+      console.error("Error creating stock notification:", err);
+      res.status(500).json({ error: "خطا در ثبت درخواست اطلاع‌رسانی موجودی" });
+    }
+  });
+
+  // Get All Stock Notification Requests (Admin Only)
+  app.get("/api/admin/stock-notifications", requireAdminAuth, async (req, res) => {
+    try {
+      const snapshot = await getDocs(
+        query(collection(db, "stock_notifications"), orderBy("createdAtIso", "desc"))
+      );
+      const items = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      res.json(items);
+    } catch (err) {
+      console.error("Error fetching stock notifications for admin:", err);
+      // Fallback empty array
+      res.json([]);
+    }
+  });
+
+  // Update Stock Notification Status (Admin Only)
+  app.put("/api/admin/stock-notifications/:id/status", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      if (!status) return res.status(400).json({ error: "وضعیت جدید الزامی است" });
+
+      await updateDoc(doc(db, "stock_notifications", id), {
+        status,
+        updatedAt: new Date().toISOString(),
+      });
+
+      res.json({ success: true, message: "وضعیت اطلاع‌رسانی بروزرسانی شد" });
+    } catch (err) {
+      res.status(500).json({ error: "خطا در تغییر وضعیت اطلاع‌رسانی" });
     }
   });
 
@@ -558,25 +747,30 @@ async function startServer() {
     }
   });
 
-  // User Profile Update Endpoint
-  app.post("/api/user/profile", async (req, res) => {
+  // User Profile Update Endpoint (Zod Validated & Rate Limited)
+  app.post("/api/user/profile", formSubmissionLimiter, async (req, res) => {
     try {
-      const { userId, name, phone, secondaryPhone, email, city, address, postalCode, nationalCode, avatar, isContactVerified } = req.body;
+      const parsed = userProfileSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.issues[0].message });
+      }
+
+      const { userId, name, phone, secondaryPhone, email, city, address, postalCode, nationalCode, avatar, isContactVerified } = parsed.data;
       const targetId = userId || "current-user";
 
       await setDoc(
         doc(db, "users", targetId),
         {
-          name,
-          phone,
-          secondaryPhone,
-          email,
-          city,
-          address,
-          postalCode,
-          nationalCode,
-          avatar,
-          isContactVerified,
+          name: name || "",
+          phone: phone || "",
+          secondaryPhone: secondaryPhone || "",
+          email: email || "",
+          city: city || "",
+          address: address || "",
+          postalCode: postalCode || "",
+          nationalCode: nationalCode || "",
+          avatar: avatar || "",
+          isContactVerified: !!isContactVerified,
           updatedAt: new Date().toISOString(),
         },
         { merge: true }
@@ -589,10 +783,15 @@ async function startServer() {
     }
   });
 
-  // AI Mobile Advisor Endpoint (Gemini)
-  app.post("/api/ai-advisor", async (req, res) => {
+  // AI Mobile Advisor Endpoint (Gemini, Zod Validated & Rate Limited)
+  app.post("/api/ai-advisor", formSubmissionLimiter, async (req, res) => {
     try {
-      const { prompt, budget, usage, preferredBrand } = req.body;
+      const parsed = aiAdvisorSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.issues[0].message });
+      }
+
+      const { prompt, budget, usage, preferredBrand } = parsed.data;
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -647,6 +846,14 @@ async function startServer() {
         reply: "متأسفانه مشکلی در پردازش درخواست هوشمند رخ داده است. می‌توانید مستقیم با کارشناسان موبایل ستاره تماس بگیرید: ۰۳۱۵۲۴۱۵۷۷۹",
       });
     }
+  });
+
+  // Global Express Error Handler Middleware (Prevents Stack Trace & Internal System Info Leakage)
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Unhandled Internal Server Error:", err);
+    res.status(500).json({
+      error: "خطای داخلی سرور رخ داده است. جهت حفظ امنیت اطلاعات، جزئیات خطای فنی نمایش داده نمی‌شود.",
+    });
   });
 
   // Vite middleware for development

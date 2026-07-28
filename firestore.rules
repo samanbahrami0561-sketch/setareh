@@ -39,6 +39,16 @@ service cloud.firestore {
     match /profiles/{userId} {
       allow read, write: if true;
     }
+
+    // Custom user uploaded photos
+    match /custom_photos/{photoId} {
+      allow read, write: if true;
+    }
+
+    // Stock Notifications: public create and read
+    match /stock_notifications/{notificationId} {
+      allow read, write: if true;
+    }
   }
 }
 

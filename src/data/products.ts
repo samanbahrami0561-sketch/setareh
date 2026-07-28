@@ -80,7 +80,7 @@ export const STORE_PRODUCTS: Product[] = [
     isInstallment: true,
     rating: 4.9,
     reviewsCount: 34,
-    stock: 8,
+    stock: 2,
     warranty: '۱۸ ماه گارانتی معتبر شرکتی + بیمه حوادث',
     description: 'ابرپرچمدار سامسونگ مجهز به قلم هوشمند S-Pen، هوش مصنوعی Galaxy AI پیشرفته، دوربین ۲۰۰ مگاپیکسلی و پردازنده اسنپدراگون ۸ الیت.'
   },
@@ -249,7 +249,7 @@ export const STORE_PRODUCTS: Product[] = [
     isInstallment: true,
     rating: 4.8,
     reviewsCount: 15,
-    stock: 3,
+    stock: 0,
     warranty: '۱۸ ماه گارانتی شرکتی + گارانتی تعویض',
     description: 'باریک‌ترین اپل واچ تاریخ با بزرگ‌ترین صفحه نمایش OLED، سنسورهای دقیق سلامت، پایش خواب و شارژ فوق‌العاده سریع.'
   },

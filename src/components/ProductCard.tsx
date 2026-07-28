@@ -7,7 +7,8 @@ import {
   Star, 
   ShieldCheck, 
   Sparkles,
-  CreditCard
+  CreditCard,
+  Bell
 } from 'lucide-react';
 
 interface ProductCardProps {
@@ -21,6 +22,7 @@ interface ProductCardProps {
   onToggleWishlist?: (id: string) => void;
   onOpenInstallment?: (product: Product) => void;
   onOpen360?: (product: Product) => void;
+  onOpenStockNotify?: (product: Product) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -29,32 +31,48 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onToggleCompare,
   isCompared,
   onSelectProduct,
-  onOpenDetail
+  onOpenDetail,
+  onOpenStockNotify,
 }) => {
   const handleSelect = onOpenDetail || onSelectProduct || (() => {});
+  const isOutOfStock = product.stock !== undefined && product.stock <= 0;
+  const isLowStock = !isOutOfStock && product.stock !== undefined && product.stock > 0 && product.stock < 3;
   const discountPercent = product.originalPriceToman
     ? Math.round(((product.originalPriceToman - product.priceToman) / product.originalPriceToman) * 100)
     : 0;
 
   return (
-    <div className="group relative bg-white hover:bg-white border border-slate-200 hover:border-slate-950 rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between">
+    <div className={`group relative bg-white hover:bg-white border ${isOutOfStock ? 'border-rose-200' : isLowStock ? 'border-rose-300' : 'border-slate-200 hover:border-slate-950'} rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between`}>
       
       {/* Top Badges */}
       <div className="absolute top-3 right-3 left-3 flex items-center justify-between z-10 pointer-events-none">
-        <div className="flex flex-col gap-1">
-          {product.isTopSeller && (
-            <span className="bg-yellow-400 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded shadow-sm uppercase tracking-tighter">
-              پرفروش
+        <div className="flex flex-col gap-1 items-start">
+          {isOutOfStock ? (
+            <span className="bg-rose-600 text-white font-black text-[10px] px-2 py-0.5 rounded shadow-sm uppercase tracking-tighter">
+              ناموجود
             </span>
-          )}
-          {product.isInstallment && (
-            <span className="bg-slate-950 text-white font-bold text-[10px] px-2 py-0.5 rounded uppercase tracking-tighter">
-              اقساطی
-            </span>
+          ) : (
+            <>
+              {isLowStock && (
+                <span className="bg-rose-600 text-white font-black text-[10px] px-2 py-0.5 rounded shadow-sm uppercase tracking-tighter animate-pulse flex items-center gap-1">
+                  فقط تعداد محدود باقیمانده
+                </span>
+              )}
+              {product.isTopSeller && (
+                <span className="bg-yellow-400 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded shadow-sm uppercase tracking-tighter">
+                  پرفروش
+                </span>
+              )}
+              {product.isInstallment && (
+                <span className="bg-slate-950 text-white font-bold text-[10px] px-2 py-0.5 rounded uppercase tracking-tighter">
+                  اقساطی
+                </span>
+              )}
+            </>
           )}
         </div>
 
-        {discountPercent > 0 && (
+        {!isOutOfStock && discountPercent > 0 && (
           <span className="bg-rose-600 text-white font-black text-[10px] px-2 py-0.5 rounded shadow-sm">
             ٪{discountPercent.toLocaleString('fa-IR')} تخفیف
           </span>
@@ -66,7 +84,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         onClick={() => handleSelect(product)}
         className="relative pt-10 pb-5 px-4 bg-slate-50 border-b border-slate-100 cursor-pointer overflow-hidden group-hover:bg-slate-100/60 transition"
       >
-        <div className="w-full h-44 flex items-center justify-center">
+        <div className={`w-full h-44 flex items-center justify-center ${isOutOfStock ? 'opacity-60 grayscale-[40%]' : ''}`}>
           <img
             src={product.image}
             alt={product.persianName}
@@ -111,10 +129,22 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             {product.description}
           </p>
 
-          <div className="flex items-center gap-1.5 text-[10px] text-slate-700 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md font-bold mt-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>موجود در مغازه مبارکه (تحویل فوری / خرید آنلاین)</span>
-          </div>
+          {isOutOfStock ? (
+            <div className="flex items-center gap-1.5 text-[10px] text-rose-800 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 px-2.5 py-1 rounded-md font-bold mt-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+              <span>کالا ناموجود است - امکان ثبت درخواست پیامکی</span>
+            </div>
+          ) : isLowStock ? (
+            <div className="flex items-center gap-1.5 text-[10px] text-rose-700 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 px-2.5 py-1 rounded-md font-bold mt-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping"></span>
+              <span>فقط تعداد محدود باقیمانده ({product.stock?.toLocaleString('fa-IR')} عدد)</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-700 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md font-bold mt-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>موجود در مغازه مبارکه (تحویل فوری / خرید آنلاین)</span>
+            </div>
+          )}
         </div>
 
         {/* Price & Action */}
@@ -122,7 +152,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <div className="flex items-baseline justify-between">
             <span className="text-[11px] text-slate-400 font-medium">قیمت روز ستاره:</span>
             <div className="text-left">
-              {product.originalPriceToman && (
+              {!isOutOfStock && product.originalPriceToman && (
                 <div className="text-[11px] text-slate-400 line-through">
                   {product.originalPriceToman.toLocaleString('fa-IR')}
                 </div>
@@ -134,13 +164,23 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </div>
 
           <div className="grid grid-cols-5 gap-2">
-            <button
-              onClick={() => onAddToCart(product)}
-              className="col-span-4 flex items-center justify-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-3 rounded-none transition transform active:scale-95 shadow-sm"
-            >
-              <ShoppingBag className="w-3.5 h-3.5 text-yellow-400" />
-              <span>افزودن به سبد</span>
-            </button>
+            {isOutOfStock ? (
+              <button
+                onClick={() => onOpenStockNotify ? onOpenStockNotify(product) : handleSelect(product)}
+                className="col-span-4 flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs py-2.5 px-3 rounded-none transition transform active:scale-95 shadow-sm"
+              >
+                <Bell className="w-3.5 h-3.5 text-slate-950 animate-bounce" />
+                <span>خبرم کن (موجودی)</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => onAddToCart(product)}
+                className="col-span-4 flex items-center justify-center gap-1.5 bg-slate-950 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-3 rounded-none transition transform active:scale-95 shadow-sm"
+              >
+                <ShoppingBag className="w-3.5 h-3.5 text-yellow-400" />
+                <span>افزودن به سبد</span>
+              </button>
+            )}
 
             <button
               onClick={() => onToggleCompare(product)}

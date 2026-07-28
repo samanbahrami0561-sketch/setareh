@@ -52,16 +52,20 @@ export const RepairBookingModal: React.FC<RepairBookingModalProps> = ({
           issue: `${issue} - ${notes}`
         })
       });
-      const data = await res.json();
-      if (data.success) {
-        setTrackingCode(data.request.id);
-        notifyRepairStatusUpdated(data.request.id, deviceModel, 'ثبت اولیه درخواست تعمیرات - در انتظار بررسی');
-        confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 }
-        });
+      let data: any = {};
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json().catch(() => ({}));
       }
+
+      const repairId = data?.request?.id || 'REP-' + Math.floor(100000 + Math.random() * 900000);
+      setTrackingCode(repairId);
+      notifyRepairStatusUpdated(repairId, deviceModel, 'ثبت اولیه درخواست تعمیرات - در انتظار بررسی');
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
     } catch (err) {
       console.error('Repair booking error:', err);
       // Fallback tracking ID

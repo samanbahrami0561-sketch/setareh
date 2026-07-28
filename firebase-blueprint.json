@@ -91,6 +91,52 @@
         "createdAt": { "type": "string" }
       },
       "required": ["email", "role"]
+    },
+    "custom_photos": {
+      "title": "custom_photos",
+      "description": "User uploaded custom phone front and back photos stored in Firebase Storage and linked here",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "frontUrl": { "type": "string" },
+        "backUrl": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "itemId", "updatedAt"]
+    },
+    "stock_notifications": {
+      "title": "stock_notifications",
+      "description": "SMS alert requests when out-of-stock items become available",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "phone": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["productId", "productName", "phone", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "products",
+      "description": "Products catalog"
+    },
+    "/orders/{orderId}": {
+      "schema": "orders",
+      "description": "Customer orders"
+    },
+    "/custom_photos/{photoId}": {
+      "schema": "custom_photos",
+      "description": "Custom uploaded phone images per user and phone"
+    },
+    "/stock_notifications/{notificationId}": {
+      "schema": "stock_notifications",
+      "description": "Customer SMS back-in-stock alerts"
     }
   }
 }

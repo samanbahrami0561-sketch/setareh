@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   X, 
   User, 
@@ -39,7 +39,16 @@ import {
   UserCheck,
   Video,
   Zap,
-  KeyRound
+  KeyRound,
+  Truck,
+  PackageCheck,
+  ExternalLink,
+  Box,
+  Filter,
+  RotateCcw,
+  MessageCircle,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { UserProfile, Product, Order } from '../types';
 
@@ -94,6 +103,13 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [selectedOrderForInvoice, setSelectedOrderForInvoice] = useState<Order | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
 
+  // Orders History Filtering & Tracking States
+  const [orderSearchQuery, setOrderSearchQuery] = useState<string>('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState<'all' | 'در حال پردازش' | 'تایید شده' | 'ارسال شده' | 'تحویل گردیده'>('all');
+  const [copiedTrackingCode, setCopiedTrackingCode] = useState<string | null>(null);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [orderToast, setOrderToast] = useState<string | null>(null);
+
   // Repair Tracking States
   const [repairCodeInput, setRepairCodeInput] = useState<string>('SR-882104');
   const [isSearchingRepair, setIsSearchingRepair] = useState<boolean>(false);
@@ -137,6 +153,42 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       handleTrackRepair('SR-882104');
     }
   }, [activeTab]);
+
+  // Orders History Filtering & Helper Logic
+  const filteredOrders = useMemo(() => {
+    return (userProfile.orders || []).filter((order) => {
+      const matchesStatus = orderStatusFilter === 'all' || order.status === orderStatusFilter;
+      const q = orderSearchQuery.toLowerCase().trim();
+      if (!q) return matchesStatus;
+      const matchesId = (order.id || '').toLowerCase().includes(q);
+      const matchesTracking = (order.trackingCode || '').toLowerCase().includes(q);
+      const matchesItems = (order.items || []).some((item) =>
+        (item.product?.persianName || '').toLowerCase().includes(q) ||
+        (item.product?.name || '').toLowerCase().includes(q) ||
+        (item.product?.brand || '').toLowerCase().includes(q)
+      );
+      return matchesStatus && (matchesId || matchesTracking || matchesItems);
+    });
+  }, [userProfile.orders, orderStatusFilter, orderSearchQuery]);
+
+  const handleCopyTrackingCode = (code: string) => {
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    setCopiedTrackingCode(code);
+    setTimeout(() => setCopiedTrackingCode(null), 2500);
+  };
+
+  const handleReorder = (order: Order) => {
+    let count = 0;
+    order.items.forEach((item) => {
+      for (let i = 0; i < item.quantity; i++) {
+        onAddToCart(item.product);
+        count++;
+      }
+    });
+    setOrderToast(`تعداد ${count} محصول مجدداً به سبد خرید شما اضافه شد.`);
+    setTimeout(() => setOrderToast(null), 3000);
+  };
 
   // Edit Profile & Avatar States
   const [isEditingProfile, setIsEditingProfile] = useState<boolean>(startInEditMode);
@@ -1044,59 +1096,317 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </div>
           )}
 
-          {/* ORDERS TAB */}
+          {/* ORDERS TAB (Enhanced Order History & Tracking) */}
           {activeTab === 'orders' && (
-            <div className="space-y-4">
-              {userProfile.orders.length === 0 ? (
-                <div className="py-12 text-center text-slate-500 font-bold space-y-2">
-                  <ShoppingBag className="w-10 h-10 text-slate-300 mx-auto" />
-                  <p>هنوز هیچ سفارشی ثبت نکرده‌اید.</p>
+            <div className="space-y-5">
+              
+              {/* Toast Notification */}
+              {orderToast && (
+                <div className="bg-emerald-950 text-emerald-300 border border-emerald-500/50 p-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn shadow-lg">
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{orderToast}</span>
+                </div>
+              )}
+
+              {/* Order Search & Status Filter Controls */}
+              <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3.5 rounded-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={orderSearchQuery}
+                      onChange={(e) => setOrderSearchQuery(e.target.value)}
+                      placeholder="جستجو بر اساس شناسه سفارش، کد رهگیری یا نام گوشی..."
+                      className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pr-9 pl-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-yellow-500 font-medium transition"
+                    />
+                    <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
+                    {orderSearchQuery && (
+                      <button
+                        onClick={() => setOrderSearchQuery('')}
+                        className="absolute left-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 shrink-0">
+                    <Box className="w-4 h-4 text-yellow-500" />
+                    <span className="font-bold">تعداد کل سفارشات: {userProfile.orders.length.toLocaleString('fa-IR')}</span>
+                  </div>
+                </div>
+
+                {/* Filter Tabs */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+                  {[
+                    { key: 'all', label: 'همه سفارشات' },
+                    { key: 'در حال پردازش', label: 'در حال پردازش' },
+                    { key: 'تایید شده', label: 'تایید شده' },
+                    { key: 'ارسال شده', label: 'ارسال شده' },
+                    { key: 'تحویل گردیده', label: 'تحویل گردیده' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setOrderStatusFilter(tab.key as any)}
+                      className={`px-3 py-1.5 rounded-lg font-bold transition whitespace-nowrap text-[11px] ${
+                        orderStatusFilter === tab.key
+                          ? 'bg-slate-950 text-white dark:bg-yellow-400 dark:text-slate-950 shadow-sm'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Order List */}
+              {filteredOrders.length === 0 ? (
+                <div className="py-12 bg-slate-50 dark:bg-slate-900/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-center text-slate-500 dark:text-slate-400 font-bold space-y-3">
+                  <ShoppingBag className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
+                  <p className="text-sm">هیچ سفارشی مطابق با فیلتر جستجوی شما یافت نشد.</p>
+                  {(orderSearchQuery || orderStatusFilter !== 'all') && (
+                    <button
+                      onClick={() => {
+                        setOrderSearchQuery('');
+                        setOrderStatusFilter('all');
+                      }}
+                      className="bg-slate-950 dark:bg-slate-800 text-white dark:text-slate-200 text-xs font-bold px-4 py-2 rounded-xl transition inline-flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>حذف فیلترها</span>
+                    </button>
+                  )}
                 </div>
               ) : (
-                userProfile.orders.map((order) => (
-                  <div key={order.id} className="bg-slate-50 border border-slate-200 p-4 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 font-bold">
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-950 font-mono text-sm">{order.id}</span>
-                        <span className="text-slate-400 font-mono text-[11px]">({order.date})</span>
-                      </div>
-                      <span className="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 text-[11px] font-black border border-emerald-300">
-                        {order.status}
-                      </span>
-                    </div>
+                filteredOrders.map((order) => {
+                  const isExpanded = expandedOrderId === order.id;
 
-                    <div className="space-y-2">
-                      {order.items.map((item, i) => (
-                        <div key={i} className="flex items-center justify-between text-slate-800">
-                          <span className="font-bold">{item.product.persianName} ({item.selectedColor}) × {item.quantity}</span>
-                          <span className="font-mono">{item.product.priceToman.toLocaleString('fa-IR')} تومان</span>
+                  // Order Status Stepper Stage (1 to 4)
+                  let currentStep = 1;
+                  if (order.status === 'تایید شده') currentStep = 2;
+                  if (order.status === 'ارسال شده') currentStep = 3;
+                  if (order.status === 'تحویل گردیده') currentStep = 4;
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition"
+                    >
+                      {/* Order Header */}
+                      <div className="p-4 bg-slate-50/80 dark:bg-slate-950/40 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="bg-slate-950 text-white dark:bg-slate-800 font-mono text-xs font-bold px-2.5 py-1 rounded-lg">
+                            {order.id}
+                          </span>
+                          <span className="text-slate-500 dark:text-slate-400 text-xs font-medium flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{order.date}</span>
+                          </span>
                         </div>
-                      ))}
-                    </div>
 
-                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
-                      <div>
-                        <span className="text-slate-500 font-bold">کد رهگیری پستی / تحویل: </span>
-                        <span className="font-mono font-bold text-slate-950">{order.trackingCode}</span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-black border flex items-center gap-1.5 ${
+                              order.status === 'تحویل گردیده'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-800'
+                                : order.status === 'ارسال شده'
+                                ? 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/80 dark:text-blue-300 dark:border-blue-800'
+                                : order.status === 'تایید شده'
+                                ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800'
+                                : 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
+                            }`}
+                          >
+                            {order.status === 'تحویل گردیده' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
+                            {order.status === 'ارسال شده' && <Truck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />}
+                            {order.status === 'تایید شده' && <PackageCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
+                            {order.status === 'در حال پردازش' && <Clock className="w-3.5 h-3.5 text-slate-500" />}
+                            <span>{order.status}</span>
+                          </span>
+
+                          <button
+                            onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
+                            className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 transition"
+                            title="جزئیات بیشتر"
+                          >
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <span className="font-black text-slate-950 text-sm">
-                          مبلغ کل: {order.finalAmountToman.toLocaleString('fa-IR')} تومان
+                      {/* Visual Order Shipping Progress Stepper */}
+                      <div className="px-4 py-3 bg-slate-50/30 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-800/60">
+                        <div className="grid grid-cols-4 gap-1 relative text-center">
+                          {[
+                            { step: 1, title: 'ثبت سفارش', icon: Clock },
+                            { step: 2, title: 'تایید و پردازش', icon: PackageCheck },
+                            { step: 3, title: 'تحویل به پست/پیک', icon: Truck },
+                            { step: 4, title: 'تحویل نهایی', icon: CheckCircle2 },
+                          ].map((s) => {
+                            const isDone = currentStep >= s.step;
+                            const isCurrent = currentStep === s.step;
+                            const IconComponent = s.icon;
+
+                            return (
+                              <div key={s.step} className="flex flex-col items-center space-y-1 relative z-10">
+                                <div
+                                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition border ${
+                                    isDone
+                                      ? 'bg-emerald-500 text-white border-emerald-600 shadow-sm'
+                                      : 'bg-slate-200 dark:bg-slate-800 text-slate-400 border-slate-300 dark:border-slate-700'
+                                  }`}
+                                >
+                                  {isDone ? <Check className="w-4 h-4 stroke-[3]" /> : <IconComponent className="w-3.5 h-3.5" />}
+                                </div>
+                                <span
+                                  className={`text-[10px] font-bold leading-tight ${
+                                    isCurrent
+                                      ? 'text-slate-950 dark:text-yellow-400'
+                                      : isDone
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-slate-400 dark:text-slate-500'
+                                  }`}
+                                >
+                                  {s.title}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Itemized Products List */}
+                      <div className="p-4 space-y-3">
+                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                          اقلام سفارش شده:
                         </span>
 
-                        <button
-                          onClick={() => setSelectedOrderForInvoice(order)}
-                          className="bg-slate-950 hover:bg-slate-800 text-white font-bold px-3 py-1 flex items-center gap-1 transition"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-yellow-400" />
-                          <span>مشاهده فاکتور</span>
-                        </button>
+                        <div className="space-y-2.5">
+                          {order.items.map((item, i) => (
+                            <div
+                              key={i}
+                              className="flex items-center justify-between bg-slate-50 dark:bg-slate-950/60 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800"
+                            >
+                              <div className="flex items-center gap-3">
+                                {item.product.image ? (
+                                  <img
+                                    src={item.product.image}
+                                    alt={item.product.persianName}
+                                    className="w-10 h-10 object-contain bg-white dark:bg-slate-900 rounded-lg p-1 border border-slate-200 dark:border-slate-800 shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 bg-slate-200 dark:bg-slate-800 rounded-lg flex items-center justify-center shrink-0">
+                                    <Smartphone className="w-5 h-5 text-slate-400" />
+                                  </div>
+                                )}
+                                <div>
+                                  <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
+                                    {item.product.persianName}
+                                  </span>
+                                  <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+                                    <span>رنگ: {item.selectedColor}</span>
+                                    <span>•</span>
+                                    <span>تعداد: {item.quantity.toLocaleString('fa-IR')}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <span className="text-xs font-mono font-bold text-slate-900 dark:text-slate-100">
+                                {(item.product.priceToman * item.quantity).toLocaleString('fa-IR')} تومان
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Extra Details (If Expanded or Always Visible) */}
+                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2 text-xs">
+                          {order.shippingAddress && (
+                            <div className="flex items-start gap-1.5 text-slate-600 dark:text-slate-300">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                              <span>آدرس تحویل: {order.shippingAddress}</span>
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500 dark:text-slate-400 font-medium">نحوه پرداخت:</span>
+                              <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-[10px] px-2 py-0.5 rounded-md">
+                                {order.paymentMethod || 'پرداخت آنلاین'}
+                              </span>
+                            </div>
+
+                            {/* Tracking Code Section */}
+                            {order.trackingCode && (
+                              <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 px-2.5 py-1 rounded-lg">
+                                <span className="text-slate-500 dark:text-slate-400 text-[11px] font-bold">کد رهگیری پستی:</span>
+                                <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">
+                                  {order.trackingCode}
+                                </span>
+                                <button
+                                  onClick={() => handleCopyTrackingCode(order.trackingCode)}
+                                  className="text-slate-400 hover:text-yellow-500 transition p-0.5"
+                                  title="کپی کد رهگیری"
+                                >
+                                  {copiedTrackingCode === order.trackingCode ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bottom Actions Row */}
+                        <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-500 dark:text-slate-400 font-bold">مبلغ پرداختی:</span>
+                            <span className="text-sm font-black text-slate-950 dark:text-yellow-400 font-mono">
+                              {order.finalAmountToman.toLocaleString('fa-IR')} تومان
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Postal Tracking Link */}
+                            {order.trackingCode && (
+                              <a
+                                href={`https://tracking.post.ir/?id=${order.trackingCode}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition text-[11px]"
+                              >
+                                <ExternalLink className="w-3 h-3 text-slate-400" />
+                                <span>سامانه رهگیری پست</span>
+                              </a>
+                            )}
+
+                            {/* Reorder Button */}
+                            <button
+                              onClick={() => handleReorder(order)}
+                              className="bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition text-[11px] shadow-sm"
+                            >
+                              <RotateCcw className="w-3 h-3 text-slate-950" />
+                              <span>سفارش مجدد</span>
+                            </button>
+
+                            {/* Print Invoice */}
+                            <button
+                              onClick={() => setSelectedOrderForInvoice(order)}
+                              className="bg-slate-950 hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition text-[11px]"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-yellow-400" />
+                              <span>فاکتور رسمی</span>
+                            </button>
+                          </div>
+                        </div>
+
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
+
             </div>
           )}
 

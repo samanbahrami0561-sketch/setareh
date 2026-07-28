@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { SearchWithRecent } from './SearchWithRecent';
 import { 
   Smartphone, 
   Search, 
   ShoppingBag, 
+  Heart,
   Sparkles, 
   PhoneCall, 
   MapPin, 
@@ -40,6 +42,7 @@ interface HeaderProps {
   cartCount: number;
   compareCount: number;
   wishlistCount?: number;
+  onOpenWishlist?: () => void;
   onOpenCart: () => void;
   onOpenCompare: () => void;
   onOpenAiAdvisor: () => void;
@@ -72,6 +75,7 @@ export const Header: React.FC<HeaderProps> = ({
   cartCount,
   compareCount,
   wishlistCount = 0,
+  onOpenWishlist,
   onOpenCart,
   onOpenCompare,
   onOpenAiAdvisor,
@@ -332,26 +336,21 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </nav>
 
-          {/* Search Bar (Compact & Sleek) */}
-          <div className="hidden lg:flex flex-1 max-w-xs relative">
-            <input
-              type="text"
+          {/* Search Bar (Compact & Sleek with Recent Searches) */}
+          <div className="hidden lg:block flex-1 max-w-xs relative">
+            <SearchWithRecent
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                if (e.target.value) onOpenFullCatalog();
+              onChange={(val) => {
+                setSearchQuery(val);
+                if (val) onOpenFullCatalog();
               }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  onOpenFullCatalog();
-                  const elem = document.getElementById('catalog');
-                  if (elem) elem.scrollIntoView({ behavior: 'smooth' });
-                }
+              onSearchSubmit={(term) => {
+                onOpenFullCatalog();
+                const elem = document.getElementById('catalog');
+                if (elem) elem.scrollIntoView({ behavior: 'smooth' });
               }}
               placeholder="جستجوی سریع..."
-              className="w-full bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-400 text-xs rounded-xl pr-9 pl-12 py-2 border border-slate-200 dark:border-slate-800 focus:border-yellow-500 focus:outline-none transition"
             />
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5" />
           </div>
 
           {/* Right Action Buttons */}
@@ -457,6 +456,20 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>ورود / ثبت‌نام</span>
               </button>
             )}
+
+            {/* Wishlist Button with Badge */}
+            <button
+              onClick={onOpenWishlist || handleOpenProfile}
+              className="relative flex items-center justify-center p-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition group"
+              title="لیست علاقه‌مندی‌ها"
+            >
+              <Heart className="w-4 h-4 text-rose-500 fill-rose-500/20 group-hover:scale-110 transition-transform" />
+              {wishlistCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white font-black text-[10px] min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-1 shadow-md border-2 border-white dark:border-slate-900 animate-pulse">
+                  {wishlistCount.toLocaleString('fa-IR')}
+                </span>
+              )}
+            </button>
 
             {/* Shopping Cart Button */}
             <button

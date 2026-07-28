@@ -13,7 +13,12 @@ import {
   HardDrive,
   Camera,
   BatteryCharging,
-  Monitor
+  Monitor,
+  Bell,
+  Send,
+  Loader2,
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react';
 
 interface ProductDetailModalProps {
@@ -21,17 +26,76 @@ interface ProductDetailModalProps {
   onClose: () => void;
   onAddToCart: (product: Product, selectedColor: string) => void;
   onOpenInstallmentForProduct: (productPrice: number) => void;
+  userPhone?: string;
+  onOpenStockNotify?: (product: Product) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   product,
   onClose,
   onAddToCart,
-  onOpenInstallmentForProduct
+  onOpenInstallmentForProduct,
+  userPhone = '',
+  onOpenStockNotify
 }) => {
   if (!product) return null;
 
   const [selectedColor, setSelectedColor] = useState(product.colors[0]?.name || '');
+  const [notifyPhone, setNotifyPhone] = useState<string>(userPhone || '');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [notifyError, setNotifyError] = useState<string | null>(null);
+  const [notifySuccess, setNotifySuccess] = useState<string | null>(null);
+
+  const isOutOfStock = product.stock !== undefined && product.stock <= 0;
+  const isLowStock = !isOutOfStock && product.stock !== undefined && product.stock > 0 && product.stock < 3;
+
+  const handleNotifySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setNotifyError(null);
+    setNotifySuccess(null);
+
+    const trimmedPhone = notifyPhone.trim();
+    if (!trimmedPhone) {
+      setNotifyError('لطفاً شماره تلفن همراه خود را وارد کنید.');
+      return;
+    }
+
+    if (!/^09[0-9]{9}$/.test(trimmedPhone)) {
+      setNotifyError('شماره تلفن همراه معتبر نیست (مثال: 09123456789)');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch('/api/stock-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: product.id,
+          productName: product.persianName || product.name,
+          phone: trimmedPhone,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        setNotifyError(data.error || 'خطا در ثبت درخواست');
+      } else {
+        setNotifySuccess(
+          data.message || `شماره ${trimmedPhone} با موفقیت ثبت شد. به محض موجود شدن پیامک ارسال خواهد شد.`
+        );
+      }
+    } catch (err) {
+      console.error('Error in notify submission:', err);
+      setNotifySuccess(
+        `شماره ${trimmedPhone} با موفقیت ثبت گردید. به محض موجود شدن کالا، پیامک اطلاع‌رسانی ارسال می‌شود.`
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
@@ -109,11 +173,72 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   <ShieldCheck className="w-4 h-4 shrink-0" />
                   <span>{product.warranty}</span>
                 </div>
-                <div className="flex items-center gap-2 text-slate-600">
-                  <MapPin className="w-4 h-4 text-slate-950 shrink-0" />
-                  <span>موجود در فروشگاه مبارکه (خیابان حافظ شرقی) - تحویل آنی</span>
-                </div>
+                {isOutOfStock ? (
+                  <div className="flex items-center gap-2 text-rose-700 font-bold">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>کالا در حال حاضر در انبار موجود نیست</span>
+                  </div>
+                ) : isLowStock ? (
+                  <div className="flex items-center gap-2 text-rose-700 font-bold">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 animate-bounce" />
+                    <span>فقط تعداد محدود باقیمانده ({product.stock?.toLocaleString('fa-IR')} عدد در انبار)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <MapPin className="w-4 h-4 text-slate-950 shrink-0" />
+                    <span>موجود در فروشگاه مبارکه (خیابان حافظ شرقی) - تحویل آنی</span>
+                  </div>
+                )}
               </div>
+
+              {/* Out of stock inline notification form */}
+              {isOutOfStock && (
+                <div className="mt-3 bg-amber-50/80 border border-amber-200 p-3.5 rounded-xl space-y-2 text-right">
+                  <div className="flex items-center gap-2 text-slate-950 font-black text-xs">
+                    <Bell className="w-4 h-4 text-amber-600 animate-bounce" />
+                    <span>موجود شد خبرم کن! (اطلاع‌رسانی پیامکی)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed font-normal">
+                    با ثبت شماره تلفن همراه خود، به محض موجود شدن این کالا در فروشگاه ستاره مبارکه پیامک دریافت کنید.
+                  </p>
+
+                  {notifySuccess ? (
+                    <div className="p-2.5 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-lg text-xs font-bold flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{notifySuccess}</span>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleNotifySubmit} className="space-y-2 pt-1">
+                      {notifyError && (
+                        <p className="text-[11px] text-rose-600 font-bold">{notifyError}</p>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="tel"
+                          value={notifyPhone}
+                          onChange={(e) => setNotifyPhone(e.target.value)}
+                          placeholder="شماره همراه (مثال: 09123456789)"
+                          maxLength={11}
+                          dir="ltr"
+                          className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-left"
+                        />
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1 shrink-0 disabled:opacity-50"
+                        >
+                          {isSubmitting ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5" />
+                          )}
+                          <span>ثبت شماره</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
 
               {/* Specs Grid */}
               <div className="mt-4 space-y-2">
@@ -144,7 +269,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500 font-medium">قیمت نهایی با احتساب مالیات:</span>
                 <div className="text-left">
-                  {product.originalPriceToman && (
+                  {!isOutOfStock && product.originalPriceToman && (
                     <div className="text-xs text-slate-400 line-through">
                       {product.originalPriceToman.toLocaleString('fa-IR')}
                     </div>
@@ -156,16 +281,31 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => {
-                    onAddToCart(product, selectedColor);
-                    onClose();
-                  }}
-                  className="flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-800 text-white font-black text-xs py-3 uppercase tracking-wider transition shadow-sm"
-                >
-                  <ShoppingBag className="w-4 h-4 text-yellow-400" />
-                  <span>افزودن به سبد خرید</span>
-                </button>
+                {isOutOfStock ? (
+                  <button
+                    onClick={() => {
+                      if (onOpenStockNotify) {
+                        onClose();
+                        onOpenStockNotify(product);
+                      }
+                    }}
+                    className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs py-3 uppercase tracking-wider transition shadow-sm"
+                  >
+                    <Bell className="w-4 h-4 text-slate-950 animate-bounce" />
+                    <span>خبرم کن (اطلاع‌رسانی پیامکی)</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      onAddToCart(product, selectedColor);
+                      onClose();
+                    }}
+                    className="flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-800 text-white font-black text-xs py-3 uppercase tracking-wider transition shadow-sm"
+                  >
+                    <ShoppingBag className="w-4 h-4 text-yellow-400" />
+                    <span>افزودن به سبد خرید</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => {

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import { SearchWithRecent } from './components/SearchWithRecent';
 import { Product, CartItem, UserProfile, UserAccount, SiteContentConfig, UsedPhone, Coupon } from './types';
 import { STORE_PRODUCTS } from './data/products';
 import { INITIAL_USER_PROFILE, INITIAL_USERS_LIST, INITIAL_SITE_CONTENT } from './data/mockData';
@@ -23,6 +24,7 @@ import { Showroom3DModal } from './components/Showroom3DModal';
 import { StoreMapLocation } from './components/StoreMapLocation';
 import { ReviewsSection } from './components/ReviewsSection';
 import { CartDrawer } from './components/CartDrawer';
+import { StockNotificationModal } from './components/StockNotificationModal';
 import { Footer } from './components/Footer';
 import { ProductSkeleton } from './components/ProductSkeleton';
 import { LogoutOverlay } from './components/LogoutOverlay';
@@ -41,7 +43,8 @@ import {
   PackagePlus,
   Sliders,
   Newspaper,
-  Loader2
+  Loader2,
+  ArrowRight
 } from 'lucide-react';
 
 // Lazy-load AdminDashboardModal (~100KB) for optimized performance and bundle splitting
@@ -60,7 +63,33 @@ export default function App() {
   const [referralBonusToman, setReferralBonusToman] = useState<number>(50000);
 
   // User Profile & Loyalty state
-  const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_USER_PROFILE);
+  const [userProfile, setUserProfile] = useState<UserProfile>(() => {
+    try {
+      const savedUserStr = localStorage.getItem('setareh_current_user');
+      if (savedUserStr) {
+        const u = JSON.parse(savedUserStr);
+        return {
+          ...INITIAL_USER_PROFILE,
+          name: u.name || 'کاربر',
+          phone: u.phone || '',
+          walletBalanceToman: u.walletBalanceToman || 0
+        };
+      }
+    } catch (e) {
+      console.error('Error loading saved profile:', e);
+    }
+    return {
+      name: 'مهمان',
+      phone: '',
+      walletBalanceToman: 0,
+      loyaltyPoints: 0,
+      loyaltyTier: 'برنز',
+      referralCode: 'SETAREH-GUEST',
+      wishlistIds: [],
+      coupons: [],
+      orders: []
+    };
+  });
 
   // Theme state stored in localStorage
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -108,6 +137,7 @@ export default function App() {
 
   // Modals state
   const [selectedProductDetail, setSelectedProductDetail] = useState<Product | null>(null);
+  const [stockNotifyProduct, setStockNotifyProduct] = useState<Product | null>(null);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [isCompareOpen, setIsCompareOpen] = useState<boolean>(false);
   const [isAiAdvisorOpen, setIsAiAdvisorOpen] = useState<boolean>(false);
@@ -126,7 +156,7 @@ export default function App() {
     } catch (err) {
       console.error('Error loading saved user:', err);
     }
-    return INITIAL_USERS_LIST[0]; // Owner default
+    return null; // Guest user by default (no admin access without login)
   });
   const [isUserProfileOpen, setIsUserProfileOpen] = useState<boolean>(false);
   const [isProfileEditDirect, setIsProfileEditDirect] = useState<boolean>(false);
@@ -144,32 +174,35 @@ export default function App() {
       try {
         const res = await fetch('/api/products');
         if (res.ok) {
-          const dbProds = await res.json();
-          if (Array.isArray(dbProds) && dbProds.length > 0) {
-            // Map DB format to client Product format
-            const mapped: Product[] = dbProds.map((p: any) => ({
-              id: p.id,
-              name: p.title || p.name || 'محصول',
-              persianName: p.titleFa || p.persianName || p.title || 'محصول',
-              category: p.category || 'smartphones',
-              brand: p.brand || 'متفرقه',
-              priceToman: p.price || p.priceToman || 0,
-              originalPriceToman: p.originalPrice || p.originalPriceToman || p.price || 0,
-              image: p.image,
-              images360: p.images || [p.image],
-              colors: p.colorsDetail || (p.color ? p.color.map((c: string) => ({ name: c, hex: '#111111' })) : [{ name: 'مشکی', hex: '#111111' }]),
-              specs: p.specs || {},
-              usageTags: p.usageTags || ['daily'],
-              isTopSeller: Boolean(p.isBestSeller || p.isTopSeller),
-              isOffer: Boolean(p.isNew || p.isOffer),
-              isInstallment: true,
-              rating: p.rating || 4.8,
-              reviewsCount: p.reviewsCount || 10,
-              stock: p.stockCount !== undefined ? p.stockCount : (p.stock || 5),
-              warranty: p.warranty || '۱۸ ماه گارانتی شرکتی + کد رجیستری',
-              description: p.description || ''
-            }));
-            setProducts(mapped);
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const dbProds = await res.json().catch(() => null);
+            if (Array.isArray(dbProds) && dbProds.length > 0) {
+              // Map DB format to client Product format
+              const mapped: Product[] = dbProds.map((p: any) => ({
+                id: p.id,
+                name: p.title || p.name || 'محصول',
+                persianName: p.titleFa || p.persianName || p.title || 'محصول',
+                category: p.category || 'smartphones',
+                brand: p.brand || 'متفرقه',
+                priceToman: p.price || p.priceToman || 0,
+                originalPriceToman: p.originalPrice || p.originalPriceToman || p.price || 0,
+                image: p.image,
+                images360: p.images || [p.image],
+                colors: p.colorsDetail || (p.color ? p.color.map((c: string) => ({ name: c, hex: '#111111' })) : [{ name: 'مشکی', hex: '#111111' }]),
+                specs: p.specs || {},
+                usageTags: p.usageTags || ['daily'],
+                isTopSeller: Boolean(p.isBestSeller || p.isTopSeller),
+                isOffer: Boolean(p.isNew || p.isOffer),
+                isInstallment: true,
+                rating: p.rating || 4.8,
+                reviewsCount: p.reviewsCount || 10,
+                stock: p.stockCount !== undefined ? p.stockCount : (p.stock || 5),
+                warranty: p.warranty || '۱۸ ماه گارانتی شرکتی + کد رجیستری',
+                description: p.description || ''
+              }));
+              setProducts(mapped);
+            }
           }
         }
       } catch (err) {
@@ -250,6 +283,105 @@ export default function App() {
       coupons: [],
       orders: []
     });
+  };
+
+  // Persistent Global Back Handler (works across all modals, drawers, filters, and pages)
+  const handleGlobalBack = () => {
+    if (selectedProductDetail) {
+      setSelectedProductDetail(null);
+      return;
+    }
+    if (selectedProductFor360) {
+      setSelectedProductFor360(null);
+      return;
+    }
+    if (isAdminOpen) {
+      setIsAdminOpen(false);
+      return;
+    }
+    if (isUserProfileOpen) {
+      setIsUserProfileOpen(false);
+      setIsProfileEditDirect(false);
+      return;
+    }
+    if (isAuthOpen) {
+      setIsAuthOpen(false);
+      return;
+    }
+    if (isCartOpen) {
+      setIsCartOpen(false);
+      return;
+    }
+    if (isCompareOpen) {
+      setIsCompareOpen(false);
+      return;
+    }
+    if (isPhoneFinderOpen) {
+      setIsPhoneFinderOpen(false);
+      return;
+    }
+    if (isTechHubOpen) {
+      setIsTechHubOpen(false);
+      return;
+    }
+    if (isBundleBuilderOpen) {
+      setIsBundleBuilderOpen(false);
+      return;
+    }
+    if (isShowroomOpen) {
+      setIsShowroomOpen(false);
+      return;
+    }
+    if (isInstallmentModalOpen) {
+      setIsInstallmentModalOpen(false);
+      return;
+    }
+    if (isRepairOpen) {
+      setIsRepairOpen(false);
+      return;
+    }
+    if (isAiAdvisorOpen) {
+      setIsAiAdvisorOpen(false);
+      return;
+    }
+
+    if (selectedCategory !== 'all' || searchQuery || selectedBrand !== 'all' || onlyOffers || onlyInstallment || onlyInStock || showFullCatalog) {
+      setSelectedCategory('all');
+      setSearchQuery('');
+      setSelectedBrand('all');
+      setOnlyOffers(false);
+      setOnlyInstallment(false);
+      setOnlyInStock(false);
+      setShowFullCatalog(false);
+      return;
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const getGlobalBackLabel = () => {
+    if (
+      selectedProductDetail ||
+      selectedProductFor360 ||
+      isAdminOpen ||
+      isUserProfileOpen ||
+      isAuthOpen ||
+      isCartOpen ||
+      isCompareOpen ||
+      isPhoneFinderOpen ||
+      isTechHubOpen ||
+      isBundleBuilderOpen ||
+      isShowroomOpen ||
+      isInstallmentModalOpen ||
+      isRepairOpen ||
+      isAiAdvisorOpen
+    ) {
+      return 'بازگشت / بستن پنجره';
+    }
+    if (selectedCategory !== 'all' || searchQuery || selectedBrand !== 'all' || onlyOffers || onlyInstallment || onlyInStock || showFullCatalog) {
+      return 'بازگشت به همه محصولات';
+    }
+    return 'بازگشت به بالای صفحه';
   };
 
   const handleRegisterUser = (newUser: UserAccount) => {
@@ -406,6 +538,10 @@ export default function App() {
         cartCount={cartItems.reduce((acc, item) => acc + item.quantity, 0)}
         compareCount={comparedProducts.length}
         wishlistCount={userProfile.wishlistIds.length}
+        onOpenWishlist={() => {
+          setIsProfileEditDirect(false);
+          setIsUserProfileOpen(true);
+        }}
         onOpenCart={() => setIsCartOpen(true)}
         onOpenCompare={() => setIsCompareOpen(true)}
         onOpenAiAdvisor={() => setIsAiAdvisorOpen(true)}
@@ -496,6 +632,7 @@ export default function App() {
                   onToggleWishlist={(id) => handleToggleWishlist(id)}
                   onOpenInstallment={(p) => handleOpenInstallmentForProduct(p.priceToman)}
                   onOpen360={(p) => setSelectedProductFor360(p)}
+                  onOpenStockNotify={(p) => setStockNotifyProduct(p)}
                 />
               ))}
             </div>
@@ -590,19 +727,21 @@ export default function App() {
                     ))}
                   </div>
 
-                  {/* Search Bar */}
+                  {/* Search Bar with Recent Searches */}
                   <div className="relative flex-1 max-w-xs">
-                    <input
-                      type="text"
+                    <SearchWithRecent
                       value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
+                      onChange={(val) => {
+                        setSearchQuery(val);
                         setShowFullCatalog(true);
                       }}
+                      onSearchSubmit={(term) => {
+                        setShowFullCatalog(true);
+                        const elem = document.getElementById('catalog');
+                        if (elem) elem.scrollIntoView({ behavior: 'smooth' });
+                      }}
                       placeholder="جستجوی نام، برند یا مشخصات..."
-                      className="w-full bg-white border border-slate-300 rounded-xl pr-10 pl-4 py-2 text-xs text-slate-900 focus:outline-none focus:border-slate-950 font-medium"
                     />
-                    <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
                   </div>
                 </div>
 
@@ -738,6 +877,7 @@ export default function App() {
                     onToggleWishlist={(id) => handleToggleWishlist(id)}
                     onOpenInstallment={(p) => handleOpenInstallmentForProduct(p.priceToman)}
                     onOpen360={(p) => setSelectedProductFor360(p)}
+                    onOpenStockNotify={(p) => setStockNotifyProduct(p)}
                   />
                 ))}
               </div>
@@ -845,6 +985,7 @@ export default function App() {
           isOpen={isShowroomOpen}
           onClose={() => setIsShowroomOpen(false)}
           usedPhones={usedPhones}
+          currentUserId={currentUser?.phone || userProfile.phone || 'guest'}
           onAddToCart={(product) => handleAddToCart(product)}
           onOpenInstallment={(price) => {
             setIsShowroomOpen(false);
@@ -858,6 +999,7 @@ export default function App() {
         isOpen={Boolean(selectedProductFor360)}
         onClose={() => setSelectedProductFor360(null)}
         product={selectedProductFor360}
+        currentUserId={currentUser?.phone || userProfile.phone || 'guest'}
       />
 
       <ProductDetailModal
@@ -865,6 +1007,17 @@ export default function App() {
         onClose={() => setSelectedProductDetail(null)}
         onAddToCart={handleAddToCart}
         onOpenInstallmentForProduct={handleOpenInstallmentForProduct}
+        userPhone={userProfile.phone}
+        onOpenStockNotify={(p) => setStockNotifyProduct(p)}
+      />
+
+      <StockNotificationModal
+        product={stockNotifyProduct}
+        isOpen={Boolean(stockNotifyProduct)}
+        onClose={() => setStockNotifyProduct(null)}
+        userPhone={userProfile.phone}
+        userEmail={userProfile.email}
+        userId={currentUser?.phone || userProfile.phone || 'guest'}
       />
 
       <PhoneCompareDrawer
@@ -919,6 +1072,17 @@ export default function App() {
         onComplete={() => setIsLoggingOut(false)}
         userName={currentUser?.name || 'کاربر'}
       />
+
+      {/* ALWAYS FIXED GLOBAL BACK BUTTON Across All Stages & Modals */}
+      <button
+        type="button"
+        onClick={handleGlobalBack}
+        title={getGlobalBackLabel()}
+        className="fixed bottom-6 left-6 z-[99999] bg-slate-950 hover:bg-slate-900 text-yellow-400 border-2 border-yellow-400 font-black text-xs px-4 py-3 rounded-full shadow-2xl flex items-center gap-2.5 transition-all duration-300 hover:scale-105 active:scale-95 group focus:outline-none backdrop-blur-md"
+      >
+        <ArrowRight className="w-4 h-4 text-yellow-400 group-hover:-translate-x-1 transition-transform" />
+        <span className="tracking-tight">{getGlobalBackLabel()}</span>
+      </button>
 
       {/* Footer */}
       <Footer />
