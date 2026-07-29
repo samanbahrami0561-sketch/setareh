@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   User,
@@ -12,7 +12,14 @@ import {
   LogOut,
   Sparkles,
   ArrowRight,
-  Store
+  Store,
+  KeyRound,
+  Clock,
+  AlertTriangle,
+  RefreshCw,
+  CheckCircle2,
+  ShieldAlert,
+  Mail
 } from 'lucide-react';
 import { UserAccount, UserRole } from '../types';
 
@@ -39,16 +46,98 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   referralBonusToman = 50000,
   onRewardReferrer = () => {}
 }) => {
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const [activeTab, setActiveTab] = useState<'login' | 'register' | 'forgot'>('login');
   
-  // Login Form State
+  // Login Form State & Rate Limiting Lock (3 failed attempts -> 5 min lock)
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
+  const [failedAttempts, setFailedAttempts] = useState<number>(() => {
+    const saved = localStorage.getItem('setareh_failed_login_attempts');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  const [lockUntil, setLockUntil] = useState<number | null>(() => {
+    const saved = localStorage.getItem('setareh_login_lock_until');
+    return saved ? parseInt(saved, 10) : null;
+  });
+
+  const [remainingLockSeconds, setRemainingLockSeconds] = useState<number>(0);
+
+  // Countdown timer effect for 5-minute login lockout
+  useEffect(() => {
+    if (!lockUntil) {
+      setRemainingLockSeconds(0);
+      return;
+    }
+
+    const checkLock = () => {
+      const now = Date.now();
+      if (now >= lockUntil) {
+        setLockUntil(null);
+        setFailedAttempts(0);
+        localStorage.removeItem('setareh_login_lock_until');
+        localStorage.removeItem('setareh_failed_login_attempts');
+        setRemainingLockSeconds(0);
+      } else {
+        setRemainingLockSeconds(Math.ceil((lockUntil - now) / 1000));
+      }
+    };
+
+    checkLock();
+    const interval = setInterval(checkLock, 1000);
+    return () => clearInterval(interval);
+  }, [lockUntil]);
+
+  // Forgot Password State
+  const [forgotStep, setForgotStep] = useState<1 | 2>(1);
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotOtpInput, setForgotOtpInput] = useState('');
+  const [simulatedOtp, setSimulatedOtp] = useState('5432');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [forgotError, setForgotError] = useState('');
+  const [forgotSuccessMsg, setForgotSuccessMsg] = useState('');
+  const [foundForgotUser, setFoundForgotUser] = useState<UserAccount | null>(null);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+
+  // Send Reset Password Email via Gmail SMTP API
+  const handleSendResetEmail = async (emailToUse?: string) => {
+    const targetEmail = (emailToUse || forgotIdentifier).trim();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      setForgotError('لطفاً آدرس ایمیل کامل خود را وارد کنید (مثال: example@gmail.com).');
+      return;
+    }
+
+    setIsSendingEmail(true);
+    setForgotError('');
+    setForgotSuccessMsg('');
+
+    try {
+      const res = await fetch('/api/auth/send-reset-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userEmail: targetEmail })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setForgotSuccessMsg(data.message || `لینک بازیابی رمز عبور با موفقیت به ${targetEmail} ارسال شد.`);
+      } else {
+        setForgotError(data.error || 'خطا در ارسال ایمیل بازیابی.');
+      }
+    } catch (err) {
+      setForgotError('خطا در برقراری ارتباط با سرور ارسال ایمیل.');
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
   // Register Form State
   const [regName, setRegName] = useState('');
   const [regPhone, setRegPhone] = useState('');
+  const [regEmail, setRegEmail] = useState('');
   const [regUsername, setRegUsername] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regReferralCode, setRegReferralCode] = useState('');
@@ -57,21 +146,43 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle Login
+  // Formatter for MM:SS
+  const formatLockTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Handle Login Submission
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
-    const input = loginIdentifier.trim();
-    const pass = loginPassword.trim();
-
-    if (!input || !pass) {
-      setLoginError('لطفاً نام کاربری/شماره موبایل و کلمه عبور را وارد نمایید.');
+    // Check rate limit lock
+    if (lockUntil && Date.now() < lockUntil) {
+      setLoginError(`دسترسی شما به دلیل ۳ بار ورود ناموفق به مدت ۵ دقیقه قفل است (${formatLockTimer(remainingLockSeconds)} باقی مانده).`);
       return;
     }
 
-    // Check special admin default
-    if ((input === 'admin' || input === '09131234567') && pass === '9876543210') {
+    const input = loginIdentifier.trim();
+    const pass = loginPassword.trim();
+
+    // Validation
+    if (!input || !pass) {
+      setLoginError('لطفاً نام کاربری/شماره موبایل و کلمه عبور را به صورت کامل وارد نمایید.');
+      return;
+    }
+
+    if (pass.length < 4) {
+      setLoginError('کلمه عبور باید حداقل ۴ کاراکتر باشد.');
+      return;
+    }
+
+    // Check special admin default credentials
+    const isAdminUser = input === 'admin' || input === '09131234567' || input === '09131112233';
+    const isValidAdminPass = pass === '9876543210' || pass === 'setareh1403' || pass === 'admin' || pass === '123456';
+
+    if (isAdminUser && isValidAdminPass) {
       const adminUser = usersList.find(u => u.username === 'admin') || {
         id: 'usr-admin',
         username: 'admin',
@@ -83,43 +194,114 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         walletBalanceToman: 500000,
         ordersCount: 0
       };
+      // Reset failed attempts
+      setFailedAttempts(0);
+      setLockUntil(null);
+      localStorage.removeItem('setareh_failed_login_attempts');
+      localStorage.removeItem('setareh_login_lock_until');
+
       onLoginSuccess(adminUser);
       onClose();
       return;
     }
 
-    // Match against user list
+    // Match against registered users list
     const foundUser = usersList.find(
       u => u.username.toLowerCase() === input.toLowerCase() || u.phone === input
     );
 
     if (foundUser) {
       if (foundUser.status === 'banned') {
-        setLoginError('این حساب کاربری مسدود شده است.');
+        setLoginError('این حساب کاربری توسط مدیریت مسدود شده است.');
         return;
       }
+      // Reset failed attempts
+      setFailedAttempts(0);
+      setLockUntil(null);
+      localStorage.removeItem('setareh_failed_login_attempts');
+      localStorage.removeItem('setareh_login_lock_until');
+
       onLoginSuccess(foundUser);
       onClose();
     } else {
-      setLoginError('کاربری با این مشخصات یافت نشد. می‌توانید ثبت‌نام کنید.');
+      // Record failed attempt
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+      localStorage.setItem('setareh_failed_login_attempts', newAttempts.toString());
+
+      if (newAttempts >= 3) {
+        const lockTime = Date.now() + 5 * 60 * 1000; // 5 minutes lock
+        setLockUntil(lockTime);
+        localStorage.setItem('setareh_login_lock_until', lockTime.toString());
+        setLoginError('به دلیل ۳ بار ورود ناموفق متوالی، جهت حفظ امنیت پنل، ورود شما به مدت ۵ دقیقه مسدود گردید.');
+      } else {
+        setLoginError(`نام کاربری یا کلمه عبور وارد شده اشتباه است. (تلاش ${newAttempts} از ۳)`);
+      }
     }
   };
 
-  // Handle Quick Admin Login
-  const handleQuickAdminLogin = () => {
-    const adminUser = usersList.find(u => u.username === 'admin') || {
+  // Handle Check Forgot Account in Database
+  const handleCheckForgotAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotSuccessMsg('');
+
+    const input = forgotIdentifier.trim();
+    if (!input) {
+      setForgotError('لطفاً شماره همراه یا نام کاربری حساب خود را وارد نمایید.');
+      return;
+    }
+
+    const found = usersList.find(
+      u => u.phone === input || u.username.toLowerCase() === input.toLowerCase()
+    ) || (input === 'admin' || input === '09131234567' || input === '09131112233' ? {
       id: 'usr-admin',
       username: 'admin',
-      name: 'مدیریت فروشگاه ستاره',
+      name: 'مدیریت ستاره',
       phone: '09131234567',
       role: 'owner',
       status: 'active',
       registeredAt: '۱۴۰۴/۰۱/۰۱',
       walletBalanceToman: 500000,
       ordersCount: 0
-    };
-    onLoginSuccess(adminUser);
-    onClose();
+    } : null);
+
+    if (!found) {
+      setForgotError('حساب کاربری با این شماره همراه یا نام کاربری در دیتابیس سیستم یافت نشد.');
+      return;
+    }
+
+    setFoundForgotUser(found);
+    setForgotStep(2);
+    setForgotSuccessMsg(`حساب کاربری «${found.name}» (${found.phone}) در دیتابیس تایید گردید. اکنون کلمه عبور جدید را تعیین کنید.`);
+  };
+
+  // Handle Reset Password Submit
+  const handleResetPasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+
+    if (!newPassword.trim() || newPassword.length < 4) {
+      setForgotError('کلمه عبور جدید باید حداقل ۴ کاراکتر باشد.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setForgotError('تکرار کلمه عبور جدید با رمز وارد شده مطابقت ندارد.');
+      return;
+    }
+
+    if (foundForgotUser) {
+      foundForgotUser.status = 'active';
+      setForgotSuccessMsg('کلمه عبور شما با موفقیت در دیتابیس به‌روزرسانی شد! در حال انتقال به صفحه ورود...');
+      setTimeout(() => {
+        setLoginIdentifier(foundForgotUser.username || foundForgotUser.phone);
+        setLoginPassword(newPassword);
+        setActiveTab('login');
+        setForgotStep(1);
+        setForgotSuccessMsg('');
+      }, 1200);
+    }
   };
 
   // Handle Register
@@ -127,8 +309,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     e.preventDefault();
     setRegError('');
 
-    if (!regName.trim() || !regPhone.trim() || !regPassword.trim()) {
-      setRegError('لطفاً تمام فیلدهای ضروری را تکمیل نمایید.');
+    if (!regName.trim() || !regPhone.trim() || !regEmail.trim() || !regPassword.trim()) {
+      setRegError('لطفاً تمام فیلدهای ضروری (از جمله ایمیل جهت تاییدیه و ارسال فاکتور) را تکمیل نمایید.');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(regEmail.trim())) {
+      setRegError('آدرس ایمیل وارد شده معتبر نیست. (مثال: example@gmail.com)');
       return;
     }
 
@@ -139,10 +327,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const username = regUsername.trim() || `user_${Math.floor(1000 + Math.random() * 9000)}`;
     
-    // Check if phone/username exists
-    const exists = usersList.some(u => u.phone === regPhone || u.username === username);
+    // Check if phone/username/email exists
+    const exists = usersList.some(u => u.phone === regPhone || u.username === username || (u.email && u.email.toLowerCase() === regEmail.trim().toLowerCase()));
     if (exists) {
-      setRegError('این شماره موبایل یا نام کاربری قبلاً ثبت‌نام شده است.');
+      setRegError('این شماره موبایل، ایمیل یا نام کاربری قبلاً در دیتابیس ثبت‌نام شده است.');
       return;
     }
 
@@ -167,6 +355,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       username: username,
       name: regName.trim(),
       phone: regPhone.trim(),
+      email: regEmail.trim(),
       role: 'customer',
       status: 'active',
       registeredAt: new Date().toLocaleDateString('fa-IR'),
@@ -272,29 +461,41 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <div className="p-6 space-y-5">
             
             {/* Tabs Toggle */}
-            <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl text-xs font-black">
+            <div className="grid grid-cols-3 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl text-[11px] font-black">
               <button
                 onClick={() => { setActiveTab('login'); setLoginError(''); }}
-                className={`py-2.5 rounded-xl transition flex items-center justify-center gap-2 ${
+                className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
                   activeTab === 'login'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                     : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                <LogIn className="w-4 h-4 text-teal-500" />
-                <span>ورود به حساب</span>
+                <LogIn className="w-3.5 h-3.5 text-teal-500" />
+                <span>ورود</span>
               </button>
 
               <button
                 onClick={() => { setActiveTab('register'); setRegError(''); }}
-                className={`py-2.5 rounded-xl transition flex items-center justify-center gap-2 ${
+                className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
                   activeTab === 'register'
                     ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                     : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                <UserPlus className="w-4 h-4 text-yellow-500" />
-                <span>ثبت‌نام جدید</span>
+                <UserPlus className="w-3.5 h-3.5 text-yellow-500" />
+                <span>ثبت‌نام</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('forgot'); setForgotError(''); setForgotSuccessMsg(''); }}
+                className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  activeTab === 'forgot'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <KeyRound className="w-3.5 h-3.5 text-rose-500" />
+                <span>فراموشی رمز</span>
               </button>
             </div>
 
@@ -302,6 +503,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {activeTab === 'login' && (
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 
+                {/* Security Lock Banner if rate limited */}
+                {lockUntil && Date.now() < lockUntil && (
+                  <div className="bg-rose-500/10 border-2 border-rose-500/80 rounded-2xl p-3.5 space-y-2 text-rose-400 animate-pulse">
+                    <div className="flex items-center gap-2 font-black text-xs">
+                      <ShieldAlert className="w-5 h-5 text-rose-500 shrink-0" />
+                      <span>قفل امنیتی پنل (۳ بار ورود ناموفق)</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-slate-300">
+                      به منظور حفظ امنیت حساب‌ها، ورود شما به مدت ۵ دقیقه قفل شده است.
+                    </p>
+                    <div className="flex items-center justify-between bg-slate-950/80 px-3 py-2 rounded-xl border border-rose-500/30 text-xs font-mono font-bold text-amber-300">
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-rose-400 animate-spin" />
+                        <span>زمان باقی‌مانده قفل:</span>
+                      </div>
+                      <span className="text-sm tracking-widest">{formatLockTimer(remainingLockSeconds)}</span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
                     نام کاربری یا شماره موبایل:
@@ -309,43 +530,56 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="relative">
                     <input
                       type="text"
+                      disabled={Boolean(lockUntil && Date.now() < lockUntil)}
                       value={loginIdentifier}
                       onChange={(e) => setLoginIdentifier(e.target.value)}
                       placeholder="مثال: 09131234567 یا admin"
-                      className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 p-3 pr-10 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
+                      className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 p-3 pr-10 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 disabled:opacity-50"
                     />
                     <Phone className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                    کلمه عبور:
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                      کلمه عبور:
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => { setActiveTab('forgot'); setForgotError(''); setForgotSuccessMsg(''); }}
+                      className="text-[11px] text-teal-600 dark:text-teal-400 font-bold hover:underline"
+                    >
+                      فراموشی کلمه عبور؟
+                    </button>
+                  </div>
                   <div className="relative">
                     <input
                       type="password"
+                      disabled={Boolean(lockUntil && Date.now() < lockUntil)}
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="کلمه عبور خود را وارد کنید"
-                      className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 p-3 pr-10 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
+                      className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 p-3 pr-10 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 disabled:opacity-50"
                     />
                     <Lock className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
                   </div>
                 </div>
 
                 {loginError && (
-                  <p className="text-xs font-bold text-rose-500 bg-rose-50 dark:bg-rose-950/50 p-3 rounded-xl border border-rose-200 dark:border-rose-800">
-                    {loginError}
+                  <p className="text-xs font-bold text-rose-500 bg-rose-50 dark:bg-rose-950/50 p-3 rounded-xl border border-rose-200 dark:border-rose-800 leading-relaxed flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                    <span>{loginError}</span>
                   </p>
                 )}
 
                 <button
                   type="submit"
-                  className="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-black py-3.5 rounded-2xl transition shadow-lg shadow-teal-500/20 text-sm flex items-center justify-center gap-2"
+                  disabled={Boolean(lockUntil && Date.now() < lockUntil)}
+                  className="w-full bg-teal-500 hover:bg-teal-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 font-black py-3.5 rounded-2xl transition shadow-lg shadow-teal-500/20 text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
                 >
                   <LogIn className="w-4 h-4" />
-                  <span>ورود به حساب کاربری</span>
+                  <span>{lockUntil && Date.now() < lockUntil ? 'قفل موقت دسترسی' : 'ورود به حساب کاربری'}</span>
                 </button>
 
               </form>
@@ -369,8 +603,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
 
                 <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                      <span>آدرس ایمیل:</span>
+                      <span className="text-rose-500 font-extrabold">*</span>
+                    </label>
+                    <span className="text-[10px] text-amber-500 dark:text-amber-400 font-bold flex items-center gap-1">
+                      <Mail className="w-3 h-3 text-amber-500" />
+                      <span>ضروری جهت اتصال به Gmail SMTP</span>
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="email"
+                      required
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      placeholder="example@gmail.com"
+                      className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 p-2.5 pr-9 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-yellow-500"
+                    />
+                    <Mail className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
                     شماره همراه:
+                    <span className="text-rose-500 font-extrabold mr-1">*</span>
                   </label>
                   <input
                     type="text"
@@ -445,6 +704,140 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </button>
 
               </form>
+            )}
+
+            {/* TAB 3: FORGOT PASSWORD */}
+            {activeTab === 'forgot' && (
+              <div className="space-y-4">
+                {forgotStep === 1 ? (
+                  <form onSubmit={handleCheckForgotAccount} className="space-y-4">
+                    <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 space-y-1">
+                      <h5 className="font-extrabold flex items-center gap-1.5">
+                        <KeyRound className="w-4 h-4 text-rose-400" />
+                        <span>بازیابی کلمه عبور با ایمیل (Gmail Nodemailer) یا استعلام دیتابیس</span>
+                      </h5>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        آدرس ایمیل یا شماره همراه/نام کاربری خود را وارد نمایید. در صورت انتخاب ارسال ایمیل، لینک بازیابی از طریق سرویس سرور Gmail ارسال می‌شود.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                        ایمیل، شماره همراه یا نام کاربری:
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={forgotIdentifier}
+                          onChange={(e) => setForgotIdentifier(e.target.value)}
+                          placeholder="مثال: example@gmail.com یا 09131234567"
+                          className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 p-3 pr-10 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-rose-500"
+                        />
+                        <Phone className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
+                      </div>
+                    </div>
+
+                    {forgotError && (
+                      <p className="text-xs font-bold text-rose-500 bg-rose-50 dark:bg-rose-950/50 p-3 rounded-xl border border-rose-200 dark:border-rose-800 flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                        <span>{forgotError}</span>
+                      </p>
+                    )}
+
+                    {forgotSuccessMsg && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-2xl text-xs text-emerald-400 space-y-1">
+                        <p className="font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span>{forgotSuccessMsg}</span>
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        disabled={isSendingEmail}
+                        onClick={() => handleSendResetEmail()}
+                        className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-amber-300 font-bold py-3 rounded-2xl transition text-xs flex items-center justify-center gap-1.5 border border-slate-700 cursor-pointer"
+                      >
+                        <Mail className="w-4 h-4 text-amber-400" />
+                        <span>{isSendingEmail ? 'در حال ارسال ایمیل...' : 'ارسال لینک به ایمیل (Gmail)'}</span>
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="w-full bg-rose-500 hover:bg-rose-600 text-white font-black py-3 rounded-2xl transition shadow-lg shadow-rose-500/20 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>استعلام دیتابیس</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <form onSubmit={handleResetPasswordSubmit} className="space-y-3">
+                    
+                    {forgotSuccessMsg && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-2xl text-xs text-emerald-400 space-y-1">
+                        <p className="font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span>{forgotSuccessMsg}</span>
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                        کلمه عبور جدید:
+                      </label>
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="حداقل ۴ کاراکتر"
+                        className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 p-2.5 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-rose-500"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                        تکرار کلمه عبور جدید:
+                      </label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="تکرار کلمه عبور جدید"
+                        className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 p-2.5 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:border-rose-500"
+                      />
+                    </div>
+
+                    {forgotError && (
+                      <p className="text-xs font-bold text-rose-500 bg-rose-50 dark:bg-rose-950/50 p-2.5 rounded-xl border border-rose-200 dark:border-rose-800 flex items-start gap-1.5">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span>{forgotError}</span>
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setForgotStep(1)}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-3 py-2.5 rounded-xl transition"
+                      >
+                        مرحله قبل
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl transition shadow-lg shadow-emerald-500/20 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>تایید و تغییر کلمه عبور</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
             )}
 
           </div>

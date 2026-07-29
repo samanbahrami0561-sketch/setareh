@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import crypto from "crypto";
+import nodemailer from "nodemailer";
 import { db } from "./src/lib/serverFirebase";
 import {
   collection,
@@ -234,6 +235,131 @@ async function startServer() {
     }
     res.clearCookie("admin_session", { path: "/" });
     res.json({ success: true, message: "خروج از پنل مدیریت با موفقیت انجام شد." });
+  });
+
+  // ----------------------------------------------------
+  // Nodemailer Password Reset Transporter & Endpoints
+  // ----------------------------------------------------
+
+  const smtpUser = process.env.SMTP_USER || "mobilesetareh.isf@gmail.com";
+  const smtpPass = process.env.SMTP_PASS || "xrqlryabdbdnclae";
+
+  const mailTransporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: smtpUser,
+      pass: smtpPass,
+    },
+  });
+
+  const resetTokensStore = new Map<string, { email: string; userDocId?: string; expiresAt: number }>();
+
+  async function sendResetPasswordEmail(userEmail: string, resetToken: string, hostUrl?: string): Promise<boolean> {
+    const baseUrl = hostUrl || process.env.APP_URL || "https://your-site.netlify.app";
+    const resetLink = `${baseUrl}/reset-password?token=${resetToken}`;
+
+    const mailOptions = {
+      from: `موبایل ستاره مبارکه <${smtpUser}>`,
+      to: userEmail,
+      subject: "بازیابی رمز عبور سایت موبایل ستاره",
+      html: `
+        <div style="direction: rtl; font-family: Tahoma, sans-serif; padding: 20px; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; max-width: 500px; margin: 0 auto;">
+          <h2 style="color: #0f172a; margin-bottom: 15px; font-size: 18px;">درخواست بازیابی رمز عبور</h2>
+          <p style="color: #334155; font-size: 14px; line-height: 1.6;">کاربر گرامی، شما درخواست تغییر رمز عبور داده‌اید.</p>
+          <p style="color: #334155; font-size: 14px; line-height: 1.6;">برای تنظیم رمز جدید روی لینک زیر کلیک کنید (این لینک تا ۱۵ دقیقه معتبر است):</p>
+          <div style="margin: 25px 0; text-align: center;">
+            <a href="${resetLink}" style="background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(76, 175, 80, 0.2);">تغییر رمز عبور</a>
+          </div>
+          <p style="color: #64748b; font-size: 12px; margin-top: 20px; border-t: 1px solid #f1f5f9; padding-top: 15px;">اگر شما این درخواست را ندادید، لطفاً این ایمیل را نادیده بگیرید.</p>
+        </div>
+      `,
+    };
+
+    try {
+      await mailTransporter.sendMail(mailOptions);
+      console.log(`[Nodemailer] Password reset email sent successfully to ${userEmail}`);
+      return true;
+    } catch (error) {
+      console.error("[Nodemailer] Error sending password reset email:", error);
+      return false;
+    }
+  }
+
+  // API Endpoint to Send Reset Password Email via Gmail SMTP
+  app.post("/api/auth/send-reset-email", formSubmissionLimiter, async (req, res) => {
+    try {
+      const { userEmail } = req.body;
+      if (!userEmail || !userEmail.includes("@")) {
+        return res.status(400).json({ error: "لطفاً یک آدرس ایمیل معتبر وارد نمایید." });
+      }
+
+      const emailTrimmed = userEmail.trim().toLowerCase();
+
+      // Check user in Firestore
+      let userDocId: string | undefined;
+      try {
+        const usersSnap = await getDocs(query(collection(db, "users"), where("email", "==", emailTrimmed)));
+        if (!usersSnap.empty) {
+          userDocId = usersSnap.docs[0].id;
+        }
+      } catch (e) {
+        console.warn("Firestore user query for reset email warning:", e);
+      }
+
+      const resetToken = crypto.randomBytes(24).toString("hex");
+      const FIFTEEN_MINS_MS = 15 * 60 * 1000;
+      resetTokensStore.set(resetToken, {
+        email: emailTrimmed,
+        userDocId,
+        expiresAt: Date.now() + FIFTEEN_MINS_MS,
+      });
+
+      const hostUrl = req.headers.origin || (req.protocol + "://" + req.get("host"));
+      const sent = await sendResetPasswordEmail(emailTrimmed, resetToken, hostUrl);
+
+      if (sent) {
+        res.json({
+          success: true,
+          message: `ایمیل بازیابی رمز عبور با موفقیت به ${emailTrimmed} ارسال شد.`,
+        });
+      } else {
+        res.status(500).json({
+          error: "خطا در ارسال ایمیل بازیابی. لطفاً از صحت اطلاعات اطمینان حاصل کنید.",
+        });
+      }
+    } catch (err: any) {
+      console.error("Send Reset Email Error:", err);
+      res.status(500).json({ error: "خطای سرور در ارسال ایمیل بازیابی." });
+    }
+  });
+
+  // API Endpoint to Confirm & Update Password via Reset Token
+  app.post("/api/auth/reset-password-confirm", formSubmissionLimiter, async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+      if (!token || !newPassword || newPassword.length < 4) {
+        return res.status(400).json({ error: "توکن بازیابی نامعتبر است یا رمز عبور بسیار کوتاه است." });
+      }
+
+      const record = resetTokensStore.get(token);
+      if (!record || Date.now() > record.expiresAt) {
+        resetTokensStore.delete(token);
+        return res.status(400).json({ error: "لینک بازیابی منقضی شده یا توکن نامعتبر است." });
+      }
+
+      if (record.userDocId) {
+        await updateDoc(doc(db, "users", record.userDocId), {
+          password: newPassword,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      resetTokensStore.delete(token);
+      res.json({ success: true, message: "رمز عبور جدید با موفقیت ثبت شد." });
+    } catch (err) {
+      console.error("Reset Password Confirm Error:", err);
+      res.status(500).json({ error: "خطا در ثبت رمز عبور جدید." });
+    }
   });
 
   // Fetch Products

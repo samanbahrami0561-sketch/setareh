@@ -12,6 +12,15 @@ export interface ProductSpecs {
   hasedSIM?: boolean;
 }
 
+export type RecipientTag = 'partner' | 'parent' | 'youth' | 'friend';
+export type GiftPersonalityTag = 'camera' | 'gaming' | 'luxury' | 'daily' | 'accessories';
+
+export interface GiftMetadata {
+  recipients?: RecipientTag[];
+  personalities?: GiftPersonalityTag[];
+  customGiftNote?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -35,6 +44,7 @@ export interface Product {
   description: string;
   unboxingVideoUrl?: string;
   usageTags?: ('gaming' | 'photography' | 'student' | 'content_creation' | 'daily')[];
+  giftMetadata?: GiftMetadata;
 }
 
 export interface CartItem {
@@ -135,7 +145,7 @@ export interface RepairBooking {
   status?: string;
 }
 
-export type UserRole = 'owner' | 'admin' | 'sales' | 'support' | 'customer';
+export type UserRole = 'owner' | 'admin' | 'editor' | 'sales' | 'support' | 'customer';
 
 export interface UserAccount {
   id: string;

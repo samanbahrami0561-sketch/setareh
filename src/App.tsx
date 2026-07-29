@@ -15,7 +15,6 @@ import { AiAdvisorModal } from './components/AiAdvisorModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { AuthModal } from './components/AuthModal';
 import { SplashScreen } from './components/SplashScreen';
-import { TargetCursor } from './components/TargetCursor';
 import { AdvancedPhoneFinderModal } from './components/AdvancedPhoneFinderModal';
 import { TechHubModal } from './components/TechHubModal';
 import { BundleBuilderModal } from './components/BundleBuilderModal';
@@ -28,6 +27,7 @@ import { StockNotificationModal } from './components/StockNotificationModal';
 import { Footer } from './components/Footer';
 import { ProductSkeleton } from './components/ProductSkeleton';
 import { LogoutOverlay } from './components/LogoutOverlay';
+import { GiftAssistantModal } from './components/GiftAssistantModal';
 import { 
   Smartphone, 
   Search, 
@@ -164,6 +164,7 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
   const [isTechHubOpen, setIsTechHubOpen] = useState<boolean>(false);
   const [isBundleBuilderOpen, setIsBundleBuilderOpen] = useState<boolean>(false);
+  const [isGiftAssistantOpen, setIsGiftAssistantOpen] = useState<boolean>(false);
   const [isShowroomOpen, setIsShowroomOpen] = useState<boolean>(false);
   const [selectedProductFor360, setSelectedProductFor360] = useState<Product | null>(null);
 
@@ -245,6 +246,7 @@ export default function App() {
     setIsAiAdvisorOpen(false);
     setIsInstallmentModalOpen(false);
     setIsPhoneFinderOpen(false);
+    setIsGiftAssistantOpen(false);
     setIsTechHubOpen(false);
     setIsBundleBuilderOpen(false);
     setIsShowroomOpen(false);
@@ -318,6 +320,10 @@ export default function App() {
     }
     if (isPhoneFinderOpen) {
       setIsPhoneFinderOpen(false);
+      return;
+    }
+    if (isGiftAssistantOpen) {
+      setIsGiftAssistantOpen(false);
       return;
     }
     if (isTechHubOpen) {
@@ -510,24 +516,8 @@ export default function App() {
   const brands = ['all', 'Apple', 'Samsung', 'Xiaomi', 'Anker'];
 
   return (
-    <div className="relative min-h-screen bg-white text-slate-900 font-['Vazirmatn',sans-serif] selection:bg-yellow-400 selection:text-slate-950 overflow-x-hidden">
+    <div className="relative min-h-screen bg-[#f8f9fa] dark:bg-[#121316] text-[#1f1f1f] dark:text-[#e3e2e6] font-['Vazirmatn',sans-serif] selection:bg-[#d3e3fd] selection:text-[#041e49] overflow-x-hidden">
       
-      {/* SVG ClipPath Definition for Scalable Clipped Buttons */}
-      <svg className="absolute w-0 h-0 pointer-events-none" aria-hidden="true">
-        <defs>
-          <clipPath id="clipped-element-shape" clipPathUnits="objectBoundingBox">
-            <path d="M 0.184 0.071 L 0.342 0.071 L 0.342 0.929 L 0.211 0.929 A 0.158 0.429 0 0 1 0.026 0.500 L 0.026 0.500 A 0.158 0.429 0 0 1 0.184 0.071 Z M 0.342 0.071 L 0.658 0.071 L 0.658 0.929 L 0.342 0.929 Z M 0.658 0.071 L 0.816 0.071 A 0.158 0.429 0 0 1 0.974 0.500 A 0.158 0.429 0 0 1 0.816 0.929 L 0.658 0.929 Z" />
-          </clipPath>
-        </defs>
-      </svg>
-
-      {/* TargetCursor from React Bits */}
-      <TargetCursor 
-        spinDuration={2}
-        pulseScale={1.15}
-        color="#FACC15"
-      />
-
       {/* Splash Screen */}
       {showSplash && (
         <SplashScreen onComplete={() => setShowSplash(false)} />
@@ -560,6 +550,7 @@ export default function App() {
           setIsUserProfileOpen(true);
         }}
         onOpenPhoneFinder={() => setIsPhoneFinderOpen(true)}
+        onOpenGiftAssistant={() => setIsGiftAssistantOpen(true)}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenTechHub={() => setIsTechHubOpen(true)}
         onOpenBundleBuilder={() => setIsBundleBuilderOpen(true)}
@@ -580,27 +571,28 @@ export default function App() {
         }}
         onOpenRepair={() => setIsRepairOpen(true)}
         onOpenPhoneFinder={() => setIsPhoneFinderOpen(true)}
+        onOpenGiftAssistant={() => setIsGiftAssistantOpen(true)}
         onOpenBundleBuilder={() => setIsBundleBuilderOpen(true)}
         onOpenShowroom={() => setIsShowroomOpen(true)}
       />
 
       {/* Main Catalog View */}
-      <main id="catalog" className="max-w-7xl mx-auto px-4 sm:px-6 py-12 space-y-12">
+      <main id="catalog" className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-10 space-y-10">
         
         {/* HOMEPAGE FEATURED VIEW vs FULL CATALOG VIEW */}
         {!showFullCatalog && !searchQuery.trim() && selectedCategory === 'all' && selectedBrand === 'all' ? (
-          <div className="space-y-8 bg-slate-50/80 p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-sm">
+          <div className="space-y-8 bg-white dark:bg-[#1e1f23] p-6 sm:p-8 rounded-3xl border border-[#e1e3e1] dark:border-[#33353b] shadow-sm">
             
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#e1e3e1] dark:border-[#33353b] pb-6">
               <div>
-                <span className="text-xs font-black text-yellow-600 bg-yellow-400/20 px-3 py-1 rounded-full uppercase tracking-wider block w-fit mb-2">
+                <span className="text-xs font-semibold text-[#0b57d0] dark:text-[#a8c7fa] bg-[#d3e3fd]/60 dark:bg-[#0842a0]/60 px-3 py-1 rounded-full uppercase tracking-wider inline-block mb-2">
                   پیشنهاد ویژه مدیریت ستاره
                 </span>
-                <h2 className="text-2xl font-black text-slate-950 flex items-center gap-2">
-                  <Smartphone className="w-6 h-6 text-yellow-500" />
+                <h2 className="text-2xl font-bold text-[#1f1f1f] dark:text-white flex items-center gap-2">
+                  <Smartphone className="w-6 h-6 text-[#0b57d0] dark:text-[#a8c7fa]" />
                   <span>محصولات منتخب صفحه اصلی</span>
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-[#747775] dark:text-[#c4c7c5] mt-1">
                   کالاهای منتخب و پیشنهادی ویژه مدیریت فروشگاه ستاره موبایل مبارکه
                 </p>
               </div>
@@ -611,9 +603,9 @@ export default function App() {
                   const elem = document.getElementById('catalog');
                   if (elem) elem.scrollIntoView({ behavior: 'smooth' });
                 }}
-                className="bg-slate-950 hover:bg-slate-800 text-yellow-400 font-black text-xs px-6 py-3.5 rounded-xl shadow-lg transition flex items-center justify-center gap-2 border border-yellow-400/30"
+                className="bg-[#0b57d0] hover:bg-[#0842a0] text-white font-medium text-xs px-6 py-3.5 rounded-full shadow-sm transition flex items-center justify-center gap-2"
               >
-                <Search className="w-4 h-4 text-yellow-400" />
+                <Search className="w-4 h-4 text-white" />
                 <span>مشاهده و جستجوی کامل محصولات ({products.length} کالا)</span>
               </button>
             </div>
@@ -640,10 +632,10 @@ export default function App() {
             <div className="text-center pt-4">
               <button
                 onClick={() => setShowFullCatalog(true)}
-                className="bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 text-white font-bold text-xs px-8 py-4 rounded-2xl border border-slate-800 shadow-xl hover:border-yellow-400 transition flex items-center justify-center gap-2 mx-auto"
+                className="bg-[#0b57d0] hover:bg-[#0842a0] dark:bg-[#a8c7fa] dark:hover:bg-[#d3e3fd] text-white dark:text-[#062e6f] font-medium text-xs px-8 py-3.5 rounded-full shadow-sm transition flex items-center justify-center gap-2 mx-auto"
               >
                 <span>نمایش ویترین و محصولات بیشتر</span>
-                <span className="bg-yellow-400 text-slate-950 font-mono text-[10px] font-black px-2 py-0.5 rounded-full">
+                <span className="bg-[#d3e3fd] dark:bg-[#0842a0] text-[#041e49] dark:text-[#d3e3fd] font-mono text-[10px] font-bold px-2 py-0.5 rounded-full">
                   +{products.length - homeFeaturedProducts.length} مدل دیگر
                 </span>
               </button>
@@ -656,8 +648,8 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-2xl font-black text-slate-950 flex items-center gap-2">
-                    <Smartphone className="w-6 h-6 text-yellow-500" />
+                  <h2 className="text-2xl font-bold text-[#1f1f1f] dark:text-white flex items-center gap-2">
+                    <Smartphone className="w-6 h-6 text-[#0b57d0] dark:text-[#a8c7fa]" />
                     <span>ویترین کامل محصولات ستاره</span>
                   </h2>
 
@@ -668,22 +660,22 @@ export default function App() {
                       setSelectedCategory('all');
                       setSelectedBrand('all');
                     }}
-                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg transition"
+                    className="text-xs bg-[#f0f4f9] dark:bg-[#28292e] text-[#444746] dark:text-[#c4c7c5] hover:text-[#1f1f1f] font-medium px-3.5 py-1.5 rounded-full transition border border-[#e1e3e1] dark:border-[#33353b]"
                   >
                     نمایش اولیه صفحه اصلی
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                <div className="flex items-center gap-2 text-xs font-medium text-[#747775]">
                   <span>تعداد پیدا شده:</span>
-                  <span className="bg-slate-100 text-slate-900 px-2.5 py-1 rounded-full font-mono font-bold">
+                  <span className="bg-[#d3e3fd] dark:bg-[#0842a0] text-[#041e49] dark:text-[#d3e3fd] px-2.5 py-0.5 rounded-full font-mono font-bold">
                     {filteredProducts.length.toLocaleString('fa-IR')}
                   </span>
                 </div>
               </div>
 
               {/* Filters Bar */}
-              <div className="bg-slate-50 p-4 border border-slate-200/80 rounded-2xl space-y-4 shadow-sm">
+              <div className="bg-white dark:bg-[#1e1f23] p-5 border border-[#e1e3e1] dark:border-[#33353b] rounded-3xl space-y-4 shadow-sm">
                 
                 {/* Category Pills */}
                 <div className="flex flex-wrap gap-2">
@@ -694,10 +686,10 @@ export default function App() {
                         setSelectedCategory(cat.id);
                         setShowFullCatalog(true);
                       }}
-                      className={`px-4 py-2 text-xs font-bold transition rounded-xl ${
+                      className={`px-4 py-2 text-xs font-medium transition rounded-full ${
                         selectedCategory === cat.id
-                          ? 'bg-slate-950 text-white shadow-md'
-                          : 'bg-white border border-slate-200 text-slate-700 hover:border-slate-400'
+                          ? 'bg-[#0b57d0] text-white dark:bg-[#a8c7fa] dark:text-[#062e6f] shadow-sm font-semibold'
+                          : 'bg-[#f0f4f9] dark:bg-[#28292e] text-[#444746] dark:text-[#c4c7c5] border border-[#e1e3e1] dark:border-[#33353b] hover:bg-[#e1e3e1]'
                       }`}
                     >
                       {cat.name}
@@ -706,9 +698,9 @@ export default function App() {
                 </div>
 
                 {/* Brand Filter & Search */}
-                <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-slate-200/60">
+                <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-[#e1e3e1] dark:border-[#33353b]">
                   <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                    <span className="text-xs font-bold text-slate-500 shrink-0">برند:</span>
+                    <span className="text-xs font-medium text-[#747775] shrink-0">برند:</span>
                     {brands.map((b) => (
                       <button
                         key={b}
@@ -716,10 +708,10 @@ export default function App() {
                           setSelectedBrand(b);
                           setShowFullCatalog(true);
                         }}
-                        className={`px-3 py-1.5 text-xs font-bold transition rounded-lg ${
+                        className={`px-3.5 py-1.5 text-xs font-medium transition rounded-full ${
                           selectedBrand === b
-                            ? 'bg-yellow-400 text-slate-950 shadow-sm'
-                            : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
+                            ? 'bg-[#d3e3fd] dark:bg-[#0842a0] text-[#041e49] dark:text-[#d3e3fd] font-bold'
+                            : 'bg-white dark:bg-[#28292e] border border-[#e1e3e1] dark:border-[#33353b] text-[#444746] dark:text-[#c4c7c5] hover:border-[#0b57d0]'
                         }`}
                       >
                         {b === 'all' ? 'همه' : b}
@@ -1009,6 +1001,8 @@ export default function App() {
         onOpenInstallmentForProduct={handleOpenInstallmentForProduct}
         userPhone={userProfile.phone}
         onOpenStockNotify={(p) => setStockNotifyProduct(p)}
+        allProducts={products}
+        onSelectProduct={(p) => setSelectedProductDetail(p)}
       />
 
       <StockNotificationModal
@@ -1048,6 +1042,14 @@ export default function App() {
       <AiAdvisorModal
         isOpen={isAiAdvisorOpen}
         onClose={() => setIsAiAdvisorOpen(false)}
+      />
+
+      <GiftAssistantModal
+        isOpen={isGiftAssistantOpen}
+        onClose={() => setIsGiftAssistantOpen(false)}
+        products={products}
+        onAddToCart={handleAddToCart}
+        onSelectProductDetail={(p) => setSelectedProductDetail(p)}
       />
 
       <CartDrawer

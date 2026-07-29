@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   X, 
   Sliders, 
@@ -47,6 +47,14 @@ export const AdvancedPhoneFinderModal: React.FC<AdvancedPhoneFinderModalProps> =
   const [requireeSIM, setRequireeSIM] = useState<boolean>(false);
   const [requireWaterproof, setRequireWaterproof] = useState<boolean>(false);
   const [fastChargeOnly, setFastChargeOnly] = useState<boolean>(false);
+
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen && modalRef.current) {
+      modalRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -113,7 +121,7 @@ export const AdvancedPhoneFinderModal: React.FC<AdvancedPhoneFinderModalProps> =
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-5xl bg-white border-2 border-slate-200 shadow-2xl overflow-hidden my-8 text-right flex flex-col max-h-[90vh]">
+      <div ref={modalRef} className="relative w-full max-w-5xl bg-white border-2 border-slate-200 shadow-2xl overflow-hidden my-8 text-right flex flex-col max-h-[90vh] transition-all">
         
         {/* Header */}
         <div className="p-4 bg-slate-950 text-white flex items-center justify-between">

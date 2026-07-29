@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Product } from '../types';
+import { STORE_PRODUCTS } from '../data/products';
+import { OfferCountdown } from './OfferCountdown';
 import { 
   X, 
   ShoppingBag, 
@@ -18,7 +20,19 @@ import {
   Send,
   Loader2,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  Share2,
+  Copy,
+  Headphones,
+  Plus,
+  Sparkles,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+  Move
 } from 'lucide-react';
 
 interface ProductDetailModalProps {
@@ -28,6 +42,8 @@ interface ProductDetailModalProps {
   onOpenInstallmentForProduct: (productPrice: number) => void;
   userPhone?: string;
   onOpenStockNotify?: (product: Product) => void;
+  allProducts?: Product[];
+  onSelectProduct?: (product: Product) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -36,7 +52,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onAddToCart,
   onOpenInstallmentForProduct,
   userPhone = '',
-  onOpenStockNotify
+  onOpenStockNotify,
+  allProducts = STORE_PRODUCTS,
+  onSelectProduct
 }) => {
   if (!product) return null;
 
@@ -45,9 +63,159 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [notifyError, setNotifyError] = useState<string | null>(null);
   const [notifySuccess, setNotifySuccess] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState<boolean>(false);
+  const [addedAccIds, setAddedAccIds] = useState<Record<string, boolean>>({});
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Fullscreen Gallery & Zoom State
+  const [isFullscreenGalleryOpen, setIsFullscreenGalleryOpen] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  // Prepare gallery images list
+  const galleryImages = [
+    product.image,
+    ...(product.images360 || [])
+  ].filter((url, index, self) => Boolean(url) && self.indexOf(url) === index);
+
+  const handleOpenFullscreen = (index = 0) => {
+    setActiveImageIndex(index);
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+    setIsFullscreenGalleryOpen(true);
+  };
+
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 0.5, 4));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => {
+      const next = Math.max(prev - 0.5, 1);
+      if (next === 1) setPanOffset({ x: 0, y: 0 });
+      return next;
+    });
+  };
+
+  const handleResetZoom = () => {
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  const handleToggleZoom = () => {
+    if (zoomLevel > 1) {
+      handleResetZoom();
+    } else {
+      setZoomLevel(2.2);
+    }
+  };
+
+  // Drag handlers when zoomed
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoomLevel <= 1) return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || zoomLevel <= 1) return;
+    setPanOffset({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Keyboard Navigation inside Fullscreen Gallery
+  useEffect(() => {
+    if (!isFullscreenGalleryOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsFullscreenGalleryOpen(false);
+      } else if (e.key === 'ArrowRight') {
+        setActiveImageIndex(prev => (prev > 0 ? prev - 1 : galleryImages.length - 1));
+        handleResetZoom();
+      } else if (e.key === 'ArrowLeft') {
+        setActiveImageIndex(prev => (prev < galleryImages.length - 1 ? prev + 1 : 0));
+        handleResetZoom();
+      } else if (e.key === '+' || e.key === '=') {
+        handleZoomIn();
+      } else if (e.key === '-') {
+        handleZoomOut();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreenGalleryOpen, galleryImages.length]);
+
+  useEffect(() => {
+    if (product && modalRef.current) {
+      modalRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [product?.id]);
 
   const isOutOfStock = product.stock !== undefined && product.stock <= 0;
   const isLowStock = !isOutOfStock && product.stock !== undefined && product.stock > 0 && product.stock < 3;
+
+  const discountPercent = product.originalPriceToman
+    ? Math.round(((product.originalPriceToman - product.priceToman) / product.originalPriceToman) * 100)
+    : 0;
+
+  // Filter suggested accessories
+  const accessories = (allProducts || STORE_PRODUCTS)
+    .filter(
+      (p) =>
+        p.id !== product.id &&
+        (p.category === 'accessories' || p.category === 'chargers' || p.category === 'headphones')
+    )
+    .sort((a, b) => {
+      const aBrandMatch = a.brand === product.brand ? -1 : 1;
+      const bBrandMatch = b.brand === product.brand ? -1 : 1;
+      return aBrandMatch - bBrandMatch;
+    })
+    .slice(0, 4);
+
+  const handleAddAccessory = (acc: Product) => {
+    onAddToCart(acc, acc.colors[0]?.name || '');
+    setAddedAccIds((prev) => ({ ...prev, [acc.id]: true }));
+    setTimeout(() => {
+      setAddedAccIds((prev) => ({ ...prev, [acc.id]: false }));
+    }, 2000);
+  };
+
+  const handleShare = async () => {
+    const shareTitle = product.persianName;
+    const shareText = `📱 ${product.persianName} (${product.brand})\n💰 قیمت: ${product.priceToman.toLocaleString('fa-IR')} تومان\n🛒 فروشگاه موبایل ستاره مبارکه`;
+    const shareUrl = window.location.href;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl,
+        });
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          console.error('Error sharing:', err);
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2500);
+      } catch (err) {
+        console.error('Error copying share text:', err);
+      }
+    }
+  };
 
   const handleNotifySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,28 +267,73 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-3xl bg-white border-2 border-slate-200 shadow-2xl overflow-hidden my-8 text-right">
+      <div ref={modalRef} className="relative w-full max-w-3xl bg-white border-2 border-slate-200 shadow-2xl overflow-hidden my-8 text-right transition-all">
         
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 left-4 z-10 p-2 bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {/* Header Action Buttons */}
+        <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
+          <button
+            onClick={handleShare}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 transition rounded-full text-xs font-bold shadow-sm"
+            title="اشتراک‌گذاری این محصول"
+          >
+            {shareCopied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="text-emerald-700">لینک کپی شد</span>
+              </>
+            ) : (
+              <>
+                <Share2 className="w-3.5 h-3.5 text-[#0b57d0]" />
+                <span className="hidden sm:inline">اشتراک‌گذاری</span>
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={onClose}
+            className="p-2 bg-slate-100 text-slate-700 hover:bg-slate-200 transition rounded-full shadow-sm"
+            title="بستن"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 p-6">
           
           {/* Left / Top: Image View */}
-          <div className="md:col-span-5 flex flex-col items-center justify-center bg-slate-50 border border-slate-200 p-6">
-            <div className="w-full h-64 flex items-center justify-center">
+          <div className="md:col-span-5 flex flex-col items-center justify-center bg-slate-50 border border-slate-200 p-6 rounded-xl">
+            <div
+              onClick={() => handleOpenFullscreen(0)}
+              className="relative group cursor-zoom-in w-full h-64 flex items-center justify-center bg-white rounded-xl border border-slate-200 p-3 overflow-hidden shadow-sm hover:shadow-md transition"
+              title="برای نمایی تمام صفحه و زوم کلیک کنید"
+            >
               <img
                 src={product.image}
                 alt={product.persianName}
-                className="max-h-full max-w-full object-contain drop-shadow-md"
+                className="max-h-full max-w-full object-contain drop-shadow-md group-hover:scale-105 transition duration-300"
                 referrerPolicy="no-referrer"
               />
+              <div className="absolute top-2.5 right-2.5 bg-slate-950/80 text-white p-2 rounded-xl opacity-0 group-hover:opacity-100 transition shadow-lg flex items-center gap-1.5 text-[11px] px-3 font-bold border border-slate-700">
+                <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                <span>تمام‌صفحه و زوم</span>
+              </div>
             </div>
+
+            {/* Gallery thumbnails if gallery > 1 */}
+            {galleryImages.length > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-3 w-full overflow-x-auto pb-1">
+                {galleryImages.map((imgUrl, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleOpenFullscreen(idx)}
+                    className="w-12 h-12 rounded-lg border border-slate-200 hover:border-amber-500 bg-white p-1 transition overflow-hidden shrink-0 shadow-sm"
+                    title={`مشاهده تصویر ${idx + 1}`}
+                  >
+                    <img src={imgUrl} alt="Gallery" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Colors picker */}
             <div className="mt-6 text-center w-full">
@@ -166,6 +379,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 {product.persianName}
               </h2>
               <p className="text-xs text-slate-400 font-mono mt-1">{product.name}</p>
+
+              {/* Special Offer Countdown Timer */}
+              {!isOutOfStock && (product.isOffer || discountPercent > 0) && (
+                <div className="mt-3">
+                  <OfferCountdown productId={product.id} variant="detailed" />
+                </div>
+              )}
 
               {/* Warranty & Availability */}
               <div className="mt-3 space-y-1.5 text-xs bg-slate-50 border border-slate-200 p-3 text-slate-700 font-medium">
@@ -280,42 +500,56 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                {isOutOfStock ? (
-                  <button
-                    onClick={() => {
-                      if (onOpenStockNotify) {
+              <div className="flex items-center gap-2">
+                <div className="grid grid-cols-2 gap-2 flex-1">
+                  {isOutOfStock ? (
+                    <button
+                      onClick={() => {
+                        if (onOpenStockNotify) {
+                          onClose();
+                          onOpenStockNotify(product);
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs py-3 uppercase tracking-wider transition shadow-sm rounded-lg"
+                    >
+                      <Bell className="w-4 h-4 text-slate-950 animate-bounce" />
+                      <span>خبرم کن (پیامکی)</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        onAddToCart(product, selectedColor);
                         onClose();
-                        onOpenStockNotify(product);
-                      }
-                    }}
-                    className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs py-3 uppercase tracking-wider transition shadow-sm"
-                  >
-                    <Bell className="w-4 h-4 text-slate-950 animate-bounce" />
-                    <span>خبرم کن (اطلاع‌رسانی پیامکی)</span>
-                  </button>
-                ) : (
+                      }}
+                      className="flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-800 text-white font-black text-xs py-3 uppercase tracking-wider transition shadow-sm rounded-lg"
+                    >
+                      <ShoppingBag className="w-4 h-4 text-yellow-400" />
+                      <span>افزودن به سبد خرید</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
-                      onAddToCart(product, selectedColor);
                       onClose();
+                      onOpenInstallmentForProduct(product.priceToman);
                     }}
-                    className="flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-800 text-white font-black text-xs py-3 uppercase tracking-wider transition shadow-sm"
+                    className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border-2 border-slate-950 text-slate-950 font-extrabold text-xs py-3 transition rounded-lg"
                   >
-                    <ShoppingBag className="w-4 h-4 text-yellow-400" />
-                    <span>افزودن به سبد خرید</span>
+                    <CreditCard className="w-4 h-4 text-slate-950" />
+                    <span>محاسبه اقساط کالا</span>
                   </button>
-                )}
+                </div>
 
                 <button
-                  onClick={() => {
-                    onClose();
-                    onOpenInstallmentForProduct(product.priceToman);
-                  }}
-                  className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border-2 border-slate-950 text-slate-950 font-extrabold text-xs py-3 transition"
+                  onClick={handleShare}
+                  className="p-3 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 rounded-lg transition flex items-center justify-center shrink-0"
+                  title="اشتراک‌گذاری این محصول"
                 >
-                  <CreditCard className="w-4 h-4 text-slate-950" />
-                  <span>محاسبه اقساط کالا</span>
+                  {shareCopied ? (
+                    <Check className="w-5 h-5 text-emerald-600" />
+                  ) : (
+                    <Share2 className="w-5 h-5 text-[#0b57d0]" />
+                  )}
                 </button>
               </div>
             </div>
@@ -324,7 +558,259 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
         </div>
 
+        {/* Suggested Accessories Section */}
+        {accessories.length > 0 && (
+          <div className="border-t border-slate-200 bg-slate-50/80 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-[#0b57d0]/10 rounded-lg text-[#0b57d0]">
+                  <Headphones className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    <span>لوازم جانبی پیشنهادی ستاره</span>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-normal">
+                    کاور، گلس، شارژر و هندزفری‌های اصلی سازگار با این کالا
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-full">
+                پیشنهاد هوشمند
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {accessories.map((acc) => {
+                const accDiscount = acc.originalPriceToman
+                  ? Math.round(((acc.originalPriceToman - acc.priceToman) / acc.originalPriceToman) * 100)
+                  : 0;
+                const isAdded = Boolean(addedAccIds[acc.id]);
+
+                return (
+                  <div
+                    key={acc.id}
+                    className="group bg-white border border-slate-200 hover:border-[#0b57d0] rounded-xl p-3 flex flex-col justify-between transition shadow-sm hover:shadow-md"
+                  >
+                    <div
+                      onClick={() => onSelectProduct ? onSelectProduct(acc) : null}
+                      className="cursor-pointer space-y-2"
+                    >
+                      <div className="w-full h-24 bg-slate-50 rounded-lg p-2 flex items-center justify-center overflow-hidden">
+                        <img
+                          src={acc.image}
+                          alt={acc.persianName}
+                          className="max-h-full max-w-full object-contain group-hover:scale-105 transition"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-bold text-slate-500 uppercase">{acc.brand}</span>
+                        <h4 className="text-xs font-bold text-slate-800 line-clamp-1 group-hover:text-[#0b57d0] transition">
+                          {acc.persianName}
+                        </h4>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <div>
+                        {accDiscount > 0 && acc.originalPriceToman && (
+                          <div className="text-[10px] text-slate-400 line-through">
+                            {acc.originalPriceToman.toLocaleString('fa-IR')}
+                          </div>
+                        )}
+                        <div className="text-xs font-extrabold text-slate-900">
+                          {acc.priceToman.toLocaleString('fa-IR')} <span className="text-[9px] font-normal text-slate-500">تومان</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleAddAccessory(acc)}
+                        className={`p-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                          isAdded
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-[#0b57d0] hover:bg-[#0842a0] text-white'
+                        }`}
+                        title="افزودن به سبد خرید"
+                      >
+                        {isAdded ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span className="text-[10px] hidden sm:inline">افزوده شد</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5" />
+                            <span className="text-[10px] hidden sm:inline">افزودن</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
+
+      {/* FULLSCREEN IMAGE GALLERY MODAL WITH ZOOM */}
+      {isFullscreenGalleryOpen && (
+        <div 
+          className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-md flex flex-col justify-between text-white select-none animate-fadeIn"
+          onMouseUp={handleMouseUp}
+        >
+          {/* Top Bar */}
+          <div className="p-4 flex items-center justify-between border-b border-slate-800/80 bg-slate-950/80 z-20">
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-extrabold text-slate-200 line-clamp-1">
+                {product.persianName}
+              </h3>
+              <span className="text-xs text-slate-400 font-mono bg-slate-900 px-2.5 py-1 rounded-full border border-slate-800">
+                تصویر {activeImageIndex + 1} از {galleryImages.length}
+              </span>
+            </div>
+
+            {/* Zoom Controls Bar */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 gap-1">
+                <button
+                  onClick={handleZoomOut}
+                  disabled={zoomLevel <= 1}
+                  className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition disabled:opacity-40"
+                  title="کاهش بزرگ‌نمایی (-)"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                
+                <button
+                  onClick={handleResetZoom}
+                  className="px-2.5 py-1 text-xs font-mono font-bold text-amber-400 hover:bg-slate-800 rounded-lg transition"
+                  title="بازنشانی زوم"
+                >
+                  {Math.round(zoomLevel * 100)}%
+                </button>
+
+                <button
+                  onClick={handleZoomIn}
+                  disabled={zoomLevel >= 4}
+                  className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition disabled:opacity-40"
+                  title="افزایش بزرگ‌نمایی (+)"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={handleResetZoom}
+                  className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition border-r border-slate-800 mr-0.5"
+                  title="اندازه عادی"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <button
+                onClick={() => setIsFullscreenGalleryOpen(false)}
+                className="p-2 bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white rounded-xl transition border border-rose-500/30 cursor-pointer"
+                title="بستن (ESC)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Center Image Canvas area */}
+          <div 
+            className="relative flex-1 overflow-hidden flex items-center justify-center p-4 cursor-grab active:cursor-grabbing"
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onWheel={(e) => {
+              if (e.deltaY < 0) handleZoomIn();
+              else handleZoomOut();
+            }}
+            onDoubleClick={handleToggleZoom}
+          >
+            {/* Previous Image Button */}
+            {galleryImages.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveImageIndex(prev => (prev > 0 ? prev - 1 : galleryImages.length - 1));
+                  handleResetZoom();
+                }}
+                className="absolute right-4 z-20 p-3 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full border border-slate-700/80 shadow-2xl transition cursor-pointer"
+                title="تصویر قبلی"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+
+            {/* Main Zoomable Image Container */}
+            <div
+              className="transition-transform ease-out flex items-center justify-center"
+              style={{
+                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
+                transition: isDragging ? 'none' : 'transform 0.15s ease-out',
+                maxWidth: '90vw',
+                maxHeight: '80vh'
+              }}
+            >
+              <img
+                src={galleryImages[activeImageIndex] || product.image}
+                alt={product.persianName}
+                className="max-h-[75vh] max-w-[85vw] object-contain drop-shadow-2xl pointer-events-none select-none"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+
+            {/* Next Image Button */}
+            {galleryImages.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveImageIndex(prev => (prev < galleryImages.length - 1 ? prev + 1 : 0));
+                  handleResetZoom();
+                }}
+                className="absolute left-4 z-20 p-3 bg-slate-900/80 hover:bg-slate-800 text-white rounded-full border border-slate-700/80 shadow-2xl transition cursor-pointer"
+                title="تصویر بعدی"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+
+            {/* Hint overlay at bottom */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/90 border border-slate-800 px-4 py-2 rounded-full text-xs text-slate-300 font-bold flex items-center gap-2 pointer-events-none shadow-xl">
+              <Move className="w-4 h-4 text-amber-400" />
+              <span>دو بار کلیک یا اسکرول موس برای زوم | برای جابه‌جایی تصویر را بکشید</span>
+            </div>
+          </div>
+
+          {/* Thumbnails strip at bottom if gallery has items */}
+          {galleryImages.length > 1 && (
+            <div className="p-3 bg-slate-950/90 border-t border-slate-800/80 flex items-center justify-center gap-2 z-20">
+              {galleryImages.map((imgUrl, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setActiveImageIndex(idx);
+                    handleResetZoom();
+                  }}
+                  className={`w-14 h-14 rounded-xl border-2 p-1 bg-white overflow-hidden transition cursor-pointer ${
+                    activeImageIndex === idx
+                      ? 'border-amber-400 ring-2 ring-amber-400/50 scale-105'
+                      : 'border-slate-800 opacity-60 hover:opacity-100'
+                  }`}
+                >
+                  <img src={imgUrl} alt="Thumbnail" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   );
 };

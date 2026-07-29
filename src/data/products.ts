@@ -34,6 +34,11 @@ export const STORE_PRODUCTS: Product[] = [
       hasedSIM: true
     },
     usageTags: ['photography', 'gaming', 'content_creation'],
+    giftMetadata: {
+      recipients: ['partner', 'youth'],
+      personalities: ['luxury', 'camera'],
+      customGiftNote: 'شاهکار لوکس تیتانیومی آیفون، برترین هدیه برای پارتنر شما جهت عکاسی و پرستیژ پرچمدار'
+    },
     isTopSeller: true,
     isOffer: true,
     isInstallment: true,
@@ -75,6 +80,11 @@ export const STORE_PRODUCTS: Product[] = [
       hasedSIM: true
     },
     usageTags: ['gaming', 'photography', 'content_creation', 'student'],
+    giftMetadata: {
+      recipients: ['partner', 'parent', 'friend'],
+      personalities: ['gaming', 'luxury', 'camera'],
+      customGiftNote: 'قدرتمندترین پرچمدار اندرویدی دنیا با قلم هوشمند و هوش مصنوعی، هدیه‌ای مجلل و فراموش‌نشدنی'
+    },
     isTopSeller: true,
     isOffer: true,
     isInstallment: true,
@@ -339,6 +349,151 @@ export const STORE_PRODUCTS: Product[] = [
     stock: 25,
     warranty: '۱۸ ماه گارانتی اصلی انکر',
     description: 'کلگی شارژ اورجینال انکر با تکنولوژی GaN II، صفر تا پنجاه درصد شارژ گوشی‌های سامسونگ و آیفون تنها در ۲۰ دقیقه بدون ایجاد حرارت.'
+  },
+  {
+    id: 'p-11',
+    name: 'Apple MagSafe Silicone Case iPhone 16 Pro Max',
+    persianName: 'کاور سیلیکونی اصلی مگ‌سیف آیفون ۱۶ پرو مکس',
+    category: 'accessories',
+    brand: 'Apple',
+    priceToman: 1850000,
+    originalPriceToman: 2100000,
+    image: 'https://images.unsplash.com/photo-1603313011101-320f26a4f6f6?auto=format&fit=crop&q=80&w=800',
+    colors: [
+      { name: 'مشکی کلاغی', hex: '#1c1c1e' },
+      { name: 'سورمه‌ای عمیق', hex: '#1e293b' },
+      { name: 'سبز لیمویی', hex: '#3f6212' }
+    ],
+    specs: {
+      screen: 'پوشش مخملی داخلی با الیاف میکروفایبر',
+      processor: 'آهنرباهای داخلی نئودیمیوم قوی MagSafe',
+      ram: 'پشتیبانی کامل از دکمه Camera Control',
+      storage: 'مقاومت بالا در برابر ضربه و خط و خش',
+      camera: 'لبه‌های برآمده محافظ لنز دوربین',
+      battery: 'سازگار با شارژرهای بی‌سیم مگ‌سیف'
+    },
+    isTopSeller: true,
+    isOffer: true,
+    isInstallment: false,
+    rating: 4.9,
+    reviewsCount: 46,
+    stock: 18,
+    warranty: 'اصالت و سلامت فیزیکی ستاره',
+    description: 'قاب سیلیکونی اصل اپل با مگ‌سیف داخلی بسیار قوی، پوشش نرم داخلی میکروفایبر و طراحی فیت برای آیفون ۱۶ پرو مکس.'
+  },
+  {
+    id: 'p-12',
+    name: 'Spigen EZ Fit Tempered Glass iPhone 16',
+    persianName: 'گلس محافظ صفحه فول‌چسب اسپایگن آیفون',
+    category: 'accessories',
+    brand: 'Apple',
+    priceToman: 950000,
+    originalPriceToman: 1150000,
+    image: 'https://images.unsplash.com/photo-1592899677977-9c10ca588bbd?auto=format&fit=crop&q=80&w=800',
+    colors: [{ name: 'شفاف', hex: '#ffffff' }],
+    specs: {
+      screen: 'سختی 9H واقعی ضد خط و خش شدید',
+      processor: 'سینی سینی نصب آسان EZ Fit بدون حباب',
+      ram: 'پوشش اولئوفوبیک ضد چربی و اثرانگشت',
+      storage: 'شفافیت HD بدون افت کیفیت نمایشگر',
+      camera: 'لبه‌های قوس‌دار 2.5D فیت کامل',
+      battery: 'سازگار با تمام قاب‌ها و کاورها'
+    },
+    isTopSeller: true,
+    isOffer: true,
+    isInstallment: false,
+    rating: 4.9,
+    reviewsCount: 78,
+    stock: 30,
+    warranty: 'ضمانت تعویض در صورت داشتن حباب در نصب اولیه',
+    description: 'بهترین گلس محافظ صفحه نمایش دنیا از برند اسپایگن همراه با سینی نصب سریع و آسان بدون نفوذ گرد و غبار.'
+  },
+  {
+    id: 'p-13',
+    name: 'Spigen Rugged Armor Case Samsung S25 Ultra',
+    persianName: 'کاور ضدضربه اسپایگن Rugged Armor سامسونگ S25 اولترا',
+    category: 'accessories',
+    brand: 'Samsung',
+    priceToman: 1450000,
+    originalPriceToman: 1650000,
+    image: 'https://images.unsplash.com/photo-1541877944-ac82a091518a?auto=format&fit=crop&q=80&w=800',
+    colors: [{ name: 'مشکی فیبرکربن', hex: '#18181b' }],
+    specs: {
+      screen: 'تکنولوژی کیسه هوای ضربه‌گیر Air Cushion',
+      processor: 'طراحی فیبر کربن کلاسیک اسپایگن',
+      ram: 'استاندارد نظامی سقوط MIL-STD 810G',
+      storage: 'دسترسی راحت به قلم S-Pen',
+      camera: 'محافظت کامل از لنزهای دوربین ۲۰۰ مگاپیکسلی',
+      battery: 'پشتیبانی از شارژ بی‌سیم و پاورشرینگ'
+    },
+    isTopSeller: true,
+    isOffer: true,
+    isInstallment: false,
+    rating: 4.8,
+    reviewsCount: 39,
+    stock: 14,
+    warranty: 'گارانتی اصالت کالا',
+    description: 'قاب ضدضربه سرسخت اسپایگن مجهز به تکنولوژی ایرکوشن برای دفع شوک ضربات شدید و محافظت از قلم و لنزهای S25 Ultra.'
+  },
+  {
+    id: 'p-14',
+    name: 'Samsung Galaxy Buds3 Pro Wireless Earphones',
+    persianName: 'هندزفری بی‌سیم سامسونگ گلکسی بادز ۳ پرو',
+    category: 'headphones',
+    brand: 'Samsung',
+    priceToman: 10900000,
+    originalPriceToman: 11800000,
+    image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?auto=format&fit=crop&q=80&w=800',
+    colors: [
+      { name: 'نقره‌ای کهکشانی', hex: '#94a3b8' },
+      { name: 'سفید مینیمال', hex: '#ffffff' }
+    ],
+    specs: {
+      screen: 'صدای Hi-Fi 24bit بی‌نظیر',
+      processor: 'هوش مصنوعی Galaxy AI ترجمه همزمان',
+      ram: 'نویز کنسلینگ هوشمند ANC تطبیقی',
+      storage: 'نوار نورپردازی Blade Lights مدرن',
+      camera: 'مقاومت IP57 در برابر آب و تعریق',
+      battery: 'تا ۳۰ ساعت شارژدهی با کیس'
+    },
+    isTopSeller: true,
+    isOffer: true,
+    isInstallment: true,
+    rating: 4.9,
+    reviewsCount: 22,
+    stock: 8,
+    warranty: '۱۸ ماه گارانتی شرکتی سامسونگ',
+    description: 'هندزفری پرچمدار جدید سامسونگ با طراحی ارگونومیک، صدای فوق‌العاده باکیفیت ۲۴ بیتی و پشتیبانی کامل از هوش مصنوعی Galaxy AI.'
+  },
+  {
+    id: 'p-15',
+    name: 'Baseus Magnetic 10000mAh PowerBank 20W',
+    persianName: 'پاوربانک ۱۰ هزار مگ‌سیفدار بیسوس ۲۰ وات',
+    category: 'chargers',
+    brand: 'Baseus',
+    priceToman: 2250000,
+    originalPriceToman: 2500000,
+    image: 'https://images.unsplash.com/photo-1622445268465-8438b658a8a4?auto=format&fit=crop&q=80&w=800',
+    colors: [
+      { name: 'مشکی مات', hex: '#0f172a' },
+      { name: 'سفید صدفی', hex: '#f8fafc' }
+    ],
+    specs: {
+      screen: 'نمایشگر دیجیتال میزان شارژ',
+      processor: 'مگنت چسبنده بسیار قوی بی‌سیم',
+      ram: 'شارژ فست ۲۰ وات تایپ سی',
+      storage: 'طراحی کم‌حجم مناسب جیب',
+      camera: 'پشتیبانی از آیفون، سامسونگ و شیائومی',
+      battery: 'ظرفیت ۱۰۰۰۰ میلی‌آمپر فست'
+    },
+    isTopSeller: false,
+    isOffer: true,
+    isInstallment: false,
+    rating: 4.7,
+    reviewsCount: 31,
+    stock: 20,
+    warranty: '۶ ماه گارانتی تعویض بیسوس',
+    description: 'پاوربانک وایرلس فست شارژ بیسوس با اتصال مگنتی قوی به پشت گوشی، بدون نیاز به همراه داشتن کابل اضافه.'
   }
 ];
 
