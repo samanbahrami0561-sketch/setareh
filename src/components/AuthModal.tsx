@@ -22,6 +22,8 @@ import {
   Mail
 } from 'lucide-react';
 import { UserAccount, UserRole } from '../types';
+import { auth } from '../lib/firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -102,7 +104,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [foundForgotUser, setFoundForgotUser] = useState<UserAccount | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
 
-  // Send Reset Password Email via Gmail SMTP API
+  // Send Reset Password Email via Firebase Auth (sendPasswordResetEmail)
   const handleSendResetEmail = async (emailToUse?: string) => {
     const targetEmail = (emailToUse || forgotIdentifier).trim();
     if (!targetEmail || !targetEmail.includes('@')) {
@@ -115,20 +117,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setForgotSuccessMsg('');
 
     try {
-      const res = await fetch('/api/auth/send-reset-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userEmail: targetEmail })
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setForgotSuccessMsg(data.message || `لینک بازیابی رمز عبور با موفقیت به ${targetEmail} ارسال شد.`);
+      await sendPasswordResetEmail(auth, targetEmail);
+      setForgotSuccessMsg(`ایمیل بازیابی رمز عبور با موفقیت از طریق سرویس فایربیس (Firebase Auth) به ${targetEmail} ارسال شد. لطفاً صندوق ورودی و Spam ایمیل خود را بررسی کنید.`);
+    } catch (err: any) {
+      console.error("Firebase reset email error:", err);
+      if (err?.code === 'auth/user-not-found') {
+        setForgotError('کاربری با این آدرس ایمیل در فایربیس ثبت نشده است.');
+      } else if (err?.code === 'auth/invalid-email') {
+        setForgotError('فرمت آدرس ایمیل وارد شده معتبر نیست.');
       } else {
-        setForgotError(data.error || 'خطا در ارسال ایمیل بازیابی.');
+        setForgotError(err?.message || 'خطا در ارسال ایمیل بازیابی توسط فایربیس.');
       }
-    } catch (err) {
-      setForgotError('خطا در برقراری ارتباط با سرور ارسال ایمیل.');
     } finally {
       setIsSendingEmail(false);
     }
@@ -714,10 +713,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <div className="bg-rose-500/10 border border-rose-500/30 p-3 rounded-2xl text-xs text-rose-300 space-y-1">
                       <h5 className="font-extrabold flex items-center gap-1.5">
                         <KeyRound className="w-4 h-4 text-rose-400" />
-                        <span>بازیابی کلمه عبور با ایمیل (Gmail Nodemailer) یا استعلام دیتابیس</span>
+                        <span>بازیابی کلمه عبور با ایمیل فایربیس (Firebase Auth) یا استعلام دیتابیس</span>
                       </h5>
                       <p className="text-[11px] text-slate-300 leading-relaxed">
-                        آدرس ایمیل یا شماره همراه/نام کاربری خود را وارد نمایید. در صورت انتخاب ارسال ایمیل، لینک بازیابی از طریق سرویس سرور Gmail ارسال می‌شود.
+                        آدرس ایمیل خود را وارد کرده و روی «ارسال لینک با فایربیس» کلیک کنید تا ایمیل تغییر رمز مستقیم و بدون نیاز به سرور واسط ارسال شود.
                       </p>
                     </div>
 
@@ -761,7 +760,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-amber-300 font-bold py-3 rounded-2xl transition text-xs flex items-center justify-center gap-1.5 border border-slate-700 cursor-pointer"
                       >
                         <Mail className="w-4 h-4 text-amber-400" />
-                        <span>{isSendingEmail ? 'در حال ارسال ایمیل...' : 'ارسال لینک به ایمیل (Gmail)'}</span>
+                        <span>{isSendingEmail ? 'در حال ارسال ایمیل...' : 'ارسال لینک به ایمیل (فایربیس)'}</span>
                       </button>
 
                       <button
