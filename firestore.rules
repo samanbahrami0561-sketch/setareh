@@ -49,6 +49,11 @@ service cloud.firestore {
     match /stock_notifications/{notificationId} {
       allow read, write: if true;
     }
+
+    // Site Config: CMS dynamic configuration & banners
+    match /site_config/{configId} {
+      allow read, write: if true;
+    }
   }
 }
 

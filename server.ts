@@ -10,6 +10,7 @@ import { db } from "./src/lib/serverFirebase";
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   updateDoc,
@@ -23,6 +24,7 @@ import {
   runTransaction,
 } from "firebase/firestore";
 import { STORE_PRODUCTS } from "./src/data/products";
+import { INITIAL_SITE_CONTENT } from "./src/data/mockData";
 import {
   checkoutSchema,
   reviewSchema,
@@ -447,6 +449,89 @@ async function startServer() {
     }
   });
 
+  // Get Site Configuration & CMS Banners (Public)
+  app.get("/api/site-config", async (req, res) => {
+    try {
+      const docSnap = await getDoc(doc(db, "site_config", "main"));
+      if (docSnap.exists()) {
+        return res.json({ success: true, config: { ...INITIAL_SITE_CONTENT, ...docSnap.data() } });
+      }
+      return res.json({ success: true, config: INITIAL_SITE_CONTENT });
+    } catch (err) {
+      console.error("Error reading site_config from Firestore, returning defaults:", err);
+      return res.json({ success: true, config: INITIAL_SITE_CONTENT });
+    }
+  });
+
+  // Save Site Configuration & CMS Banners (Admin Only)
+  app.post("/api/admin/site-config", requireAdminAuth, async (req, res) => {
+    try {
+      const newConfig = req.body;
+      if (!newConfig || typeof newConfig !== "object") {
+        return res.status(400).json({ error: "اطلاعات پیکربندی معتبر نیست" });
+      }
+
+      await setDoc(
+        doc(db, "site_config", "main"),
+        {
+          ...newConfig,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      res.json({ success: true, message: "تنظیمات سایت و بنرها با موفقیت در دیتابیس ذخیره شد" });
+    } catch (err) {
+      console.error("Error saving site_config to Firestore:", err);
+      res.status(500).json({ error: "خطا در ذخیره تنظیمات سایت در دیتابیس" });
+    }
+  });
+
+  // Download Full Database Backup JSON (Admin only)
+  app.get("/api/admin/backup", requireAdminAuth, async (req, res) => {
+    try {
+      const [productsSnap, usersSnap, ordersSnap, stockSnap, configSnap] = await Promise.all([
+        getDocs(collection(db, "products")),
+        getDocs(collection(db, "users")),
+        getDocs(collection(db, "orders")),
+        getDocs(collection(db, "stock_notifications")),
+        getDoc(doc(db, "site_config", "main")),
+      ]);
+
+      const products = productsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const users = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const orders = ordersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const stockNotifications = stockSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const siteConfig = configSnap.exists() ? configSnap.data() : INITIAL_SITE_CONTENT;
+
+      const backupData = {
+        app: "فروشگاه موبایل ستاره مبارکه",
+        version: "1.0.0",
+        exportedAt: new Date().toISOString(),
+        summary: {
+          totalProducts: products.length,
+          totalUsers: users.length,
+          totalOrders: orders.length,
+          totalStockNotifications: stockNotifications.length,
+        },
+        data: {
+          products,
+          users,
+          orders,
+          stockNotifications,
+          siteConfig,
+        }
+      };
+
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename=setareh_mobile_backup_${new Date().toISOString().split('T')[0]}.json`);
+      res.send(JSON.stringify(backupData, null, 2));
+    } catch (err) {
+      console.error("Error generating database backup:", err);
+      res.status(500).json({ error: "خطا در استخراج فایل پشتیبان دیتابیس" });
+    }
+  });
+
   // Server-Side Checkout & Order Processing (Price calculation, Stock validation & Transaction)
   app.post("/api/orders/checkout", formSubmissionLimiter, async (req, res) => {
     try {
@@ -757,6 +842,97 @@ async function startServer() {
       res.json({ success: true, message: "وضعیت اطلاع‌رسانی بروزرسانی شد" });
     } catch (err) {
       res.status(500).json({ error: "خطا در تغییر وضعیت اطلاع‌رسانی" });
+    }
+  });
+
+  // Bulk SMS Dispatch for Stock Availability (Admin Only)
+  app.post("/api/admin/stock-notifications/send-bulk-sms", requireAdminAuth, async (req, res) => {
+    try {
+      const { notificationIds, productName, messageTemplate } = req.body;
+
+      const snapshot = await getDocs(collection(db, "stock_notifications"));
+      const allItems = snapshot.docs.map((d) => ({ id: d.id, ...d.data() as any }));
+
+      // Filter items to process
+      let targets = allItems;
+      if (Array.isArray(notificationIds) && notificationIds.length > 0) {
+        targets = targets.filter((item) => notificationIds.includes(item.id));
+      } else if (productName && productName !== "ALL") {
+        targets = targets.filter((item) => item.productName === productName);
+      }
+
+      if (targets.length === 0) {
+        return res.status(400).json({ error: "هیچ درخواستی با مشخصات انتخاب‌شده برای ارسال پیامک یافت نشد." });
+      }
+
+      const sentPhones: string[] = [];
+      const updatedTime = new Date().toISOString();
+
+      for (const target of targets) {
+        const itemMsg = (messageTemplate || "سلام، محصول «{نام_محصول}» در فروشگاه ستاره مبارکه موجود گردید.")
+          .replace(/{نام_محصول}/g, target.productName || "کالای درخواستی")
+          .replace(/{شماره}/g, target.phone || "")
+          .replace(/{نام_فروشگاه}/g, "موبایل ستاره مبارکه");
+
+        await updateDoc(doc(db, "stock_notifications", target.id), {
+          status: "پیامک ارسال شد",
+          sentAt: updatedTime,
+          lastMessage: itemMsg,
+        });
+
+        if (target.phone && !sentPhones.includes(target.phone)) {
+          sentPhones.push(target.phone);
+        }
+      }
+
+      console.log(`[SMS BROADCAST SIMULATION] Successfully sent stock alert SMS to ${sentPhones.length} phone numbers:`, sentPhones);
+
+      res.json({
+        success: true,
+        count: targets.length,
+        uniquePhonesCount: sentPhones.length,
+        sentPhones,
+        message: `پیامک اطلاع‌رسانی موجودی با موفقیت برای ${targets.length} درخواست (${sentPhones.length} شماره همراه مجزا) ارسال گردید.`,
+      });
+    } catch (err: any) {
+      console.error("Error sending bulk stock notification SMS:", err);
+      res.status(500).json({ error: "خطا در ارسال انبوه پیامک اطلاع‌رسانی" });
+    }
+  });
+
+  // Single SMS Dispatch for Stock Notification (Admin Only)
+  app.post("/api/admin/stock-notifications/send-single-sms", requireAdminAuth, async (req, res) => {
+    try {
+      const { notificationId, message } = req.body;
+      if (!notificationId) {
+        return res.status(400).json({ error: "شناسه درخواست الزامی است" });
+      }
+
+      const docSnap = await getDoc(doc(db, "stock_notifications", notificationId));
+      if (!docSnap.exists()) {
+        return res.status(404).json({ error: "درخواست یافت نشد" });
+      }
+
+      const data = docSnap.data();
+      const updatedTime = new Date().toISOString();
+      const finalMsg = message || `سلام، محصول «${data.productName}» در فروشگاه ستاره مبارکه موجود شد. جهت ثبت سفارش مراجعه کنید.`;
+
+      await updateDoc(doc(db, "stock_notifications", notificationId), {
+        status: "پیامک ارسال شد",
+        sentAt: updatedTime,
+        lastMessage: finalMsg,
+      });
+
+      console.log(`[SINGLE SMS SIMULATION] Sent stock alert to ${data.phone}:`, finalMsg);
+
+      res.json({
+        success: true,
+        phone: data.phone,
+        message: `پیامک اطلاع‌رسانی با موفقیت برای شماره ${data.phone} ارسال شد.`,
+      });
+    } catch (err: any) {
+      console.error("Error sending single stock alert SMS:", err);
+      res.status(500).json({ error: "خطا در ارسال پیامک تکی" });
     }
   });
 

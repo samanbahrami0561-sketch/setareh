@@ -4,9 +4,11 @@ import {
   ShoppingBag, 
   Scale, 
   Star, 
-  Bell
+  Bell,
+  PhoneCall
 } from 'lucide-react';
 import { OfferCountdown } from './OfferCountdown';
+import { ImageLoader } from './ImageLoader';
 
 interface ProductCardProps {
   product: Product;
@@ -20,6 +22,7 @@ interface ProductCardProps {
   onOpenInstallment?: (product: Product) => void;
   onOpen360?: (product: Product) => void;
   onOpenStockNotify?: (product: Product) => void;
+  onOpenPriceInquiry?: (product: Product) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -30,6 +33,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onSelectProduct,
   onOpenDetail,
   onOpenStockNotify,
+  onOpenPriceInquiry,
 }) => {
   const handleSelect = onOpenDetail || onSelectProduct || (() => {});
   const isOutOfStock = product.stock !== undefined && product.stock <= 0;
@@ -89,11 +93,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         className="relative py-4 px-2 bg-[#f0f4f9] dark:bg-[#28292e] rounded-xl cursor-pointer overflow-hidden transition"
       >
         <div className={`w-full h-40 flex items-center justify-center ${isOutOfStock ? 'opacity-60 grayscale-[40%]' : ''}`}>
-          <img
+          <ImageLoader
             src={product.image}
             alt={product.persianName}
+            width={300}
+            height={300}
+            containerClassName="w-full h-full flex items-center justify-center"
             className="max-h-full max-w-full object-contain group-hover:scale-105 transition duration-300"
-            referrerPolicy="no-referrer"
           />
         </div>
 
@@ -167,36 +173,60 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-1.5">
             {isOutOfStock ? (
               <button
                 onClick={() => onOpenStockNotify ? onOpenStockNotify(product) : handleSelect(product)}
-                className="flex-1 flex items-center justify-center gap-1.5 bg-[#feefc3] dark:bg-[#5c3e00] text-[#762700] dark:text-[#fde293] font-semibold text-xs py-2.5 px-3 rounded-full hover:opacity-90 transition"
+                className="w-full flex items-center justify-center gap-1.5 bg-[#feefc3] dark:bg-[#5c3e00] text-[#762700] dark:text-[#fde293] font-semibold text-xs py-2.5 px-3 rounded-xl hover:opacity-90 transition cursor-pointer"
               >
                 <Bell className="w-3.5 h-3.5" />
-                <span>خبرم کن (موجودی)</span>
+                <span>خبرم کن (موجودی جدید)</span>
               </button>
             ) : (
-              <button
-                onClick={() => onAddToCart(product)}
-                className="flex-1 flex items-center justify-center gap-1.5 bg-[#0b57d0] hover:bg-[#0842a0] dark:bg-[#a8c7fa] dark:hover:bg-[#d3e3fd] text-white dark:text-[#062e6f] font-medium text-xs py-2.5 px-4 rounded-full shadow-sm transition"
-              >
-                <ShoppingBag className="w-3.5 h-3.5" />
-                <span>افزودن به سبد</span>
-              </button>
-            )}
+              <div className="flex items-center gap-1.5">
+                {/* Main Price Inquiry Button */}
+                <button
+                  onClick={() => onOpenPriceInquiry ? onOpenPriceInquiry(product) : handleSelect(product)}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-2.5 rounded-xl shadow-sm transition cursor-pointer"
+                  title="استعلام قیمت روز و تخفیف فوری"
+                >
+                  <PhoneCall className="w-3.5 h-3.5 animate-pulse shrink-0" />
+                  <span className="truncate">استعلام قیمت لحظه‌ای</span>
+                </button>
 
-            <button
-              onClick={() => onToggleCompare(product)}
-              className={`p-2.5 rounded-full border transition ${
-                isCompared 
-                  ? 'bg-[#d3e3fd] dark:bg-[#0842a0] border-[#0b57d0] text-[#0b57d0] dark:text-[#d3e3fd]' 
-                  : 'bg-white dark:bg-[#28292e] border-[#c4c7c5] dark:border-[#444746] text-[#444746] dark:text-[#c4c7c5] hover:border-[#0b57d0]'
-              }`}
-              title={isCompared ? 'حذف از مقایسه' : 'افزودن به مقایسه'}
-            >
-              <Scale className="w-3.5 h-3.5" />
-            </button>
+                {/* Direct Store Call Button */}
+                <a
+                  href="tel:03152415759"
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl shadow-sm transition cursor-pointer shrink-0 flex items-center justify-center"
+                  title="تماس تلفنی مستقیم با فروشگاه مبارکه (۰۳۱-۵۲۴۱۵۷۵۹)"
+                >
+                  <PhoneCall className="w-3.5 h-3.5" />
+                </a>
+
+                {/* Add to Cart icon */}
+                <button
+                  onClick={() => onAddToCart(product)}
+                  className="p-2 bg-[#0b57d0] hover:bg-[#0842a0] dark:bg-[#a8c7fa] dark:hover:bg-[#d3e3fd] text-white dark:text-[#062e6f] rounded-xl shadow-sm transition cursor-pointer shrink-0"
+                  title="افزودن مستقیم به سبد خرید آنلاین"
+                >
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Compare Button */}
+                <button
+                  onClick={() => onToggleCompare(product)}
+                  className={`p-2 rounded-xl border transition cursor-pointer shrink-0 ${
+                    isCompared 
+                      ? 'bg-[#d3e3fd] dark:bg-[#0842a0] border-[#0b57d0] text-[#0b57d0] dark:text-[#d3e3fd]' 
+                      : 'bg-white dark:bg-[#28292e] border-[#c4c7c5] dark:border-[#444746] text-[#444746] dark:text-[#c4c7c5] hover:border-[#0b57d0]'
+                  }`}
+                  title={isCompared ? 'حذف از مقایسه' : 'افزودن به مقایسه'}
+                >
+                  <Scale className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

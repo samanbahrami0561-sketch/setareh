@@ -33,10 +33,11 @@ import {
   Wrench as WrenchIcon,
   ShoppingBag as OrderIcon,
   ShieldCheck,
-  Gift
+  Gift,
+  Camera
 } from 'lucide-react';
 import { requestNotificationPermission } from '../lib/notification';
-import { SiteContentConfig, UserAccount } from '../types';
+import { Product, SiteContentConfig, UserAccount } from '../types';
 
 interface HeaderProps {
   cartCount: number;
@@ -70,6 +71,8 @@ interface HeaderProps {
   onLogout?: () => void;
   isDarkMode?: boolean;
   onToggleDarkMode?: () => void;
+  products?: Product[];
+  onSelectProduct?: (product: Product) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -103,7 +106,9 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onLogout = () => {},
   isDarkMode = false,
-  onToggleDarkMode = () => {}
+  onToggleDarkMode = () => {},
+  products = [],
+  onSelectProduct
 }) => {
   const handleOpenAuth = onOpenAuthModal || onOpenAuth || (() => {});
   const handleOpenProfile = onOpenUserProfile || onOpenProfile || (() => {});
@@ -276,14 +281,14 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             <button
-              onClick={onOpenShowroom}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition"
+              onClick={() => {
+                const elem = document.getElementById('store-gallery');
+                if (elem) elem.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[#444746] dark:text-[#c4c7c5] hover:text-[#1f1f1f] dark:hover:text-white transition cursor-pointer"
             >
-              <Box className="w-3.5 h-3.5 text-yellow-500" />
-              <span>نمایشگاه ۳بعدی</span>
-              <span className="bg-yellow-400/20 text-yellow-600 dark:text-yellow-400 text-[9px] px-1 rounded font-mono">
-                کارکرده
-              </span>
+              <Camera className="w-4 h-4 text-amber-500" />
+              <span>تصاویر فروشگاه</span>
             </button>
 
             {/* SERVICES & TOOLS DROPDOWN MENU */}
@@ -336,10 +341,12 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </nav>
 
-          {/* Search Bar (Compact & Sleek with Recent Searches) */}
+          {/* Search Bar (Compact & Sleek with Live Product Autocomplete & Recent Searches) */}
           <div className="hidden lg:block flex-1 max-w-xs relative">
             <SearchWithRecent
               value={searchQuery}
+              products={products}
+              onSelectProduct={onSelectProduct}
               onChange={(val) => {
                 setSearchQuery(val);
                 if (val) onOpenFullCatalog();
@@ -498,16 +505,25 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Mobile Menu Overlay */}
         {mobileMenuOpen && (
           <div className="md:hidden mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 pb-3 space-y-3 font-bold text-xs">
-            {/* Search Input */}
+            {/* Search Input with Live Suggestions */}
             <div className="relative">
-              <input
-                type="text"
+              <SearchWithRecent
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                products={products}
+                onSelectProduct={(prod) => {
+                  if (onSelectProduct) onSelectProduct(prod);
+                  setMobileMenuOpen(false);
+                }}
+                onChange={(val) => {
+                  setSearchQuery(val);
+                  if (val) onOpenFullCatalog();
+                }}
+                onSearchSubmit={(term) => {
+                  onOpenFullCatalog();
+                  setMobileMenuOpen(false);
+                }}
                 placeholder="جستجوی کالای مورد نظر..."
-                className="w-full bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-400 text-xs rounded-xl pr-9 pl-4 py-2 border border-slate-200 dark:border-slate-800"
               />
-              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
             </div>
 
             <div className="grid grid-cols-2 gap-2">

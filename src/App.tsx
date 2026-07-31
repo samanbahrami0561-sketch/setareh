@@ -21,6 +21,7 @@ import { BundleBuilderModal } from './components/BundleBuilderModal';
 import { Interactive360Modal } from './components/Interactive360Modal';
 import { Showroom3DModal } from './components/Showroom3DModal';
 import { StoreMapLocation } from './components/StoreMapLocation';
+import { StoreGallerySection } from './components/StoreGallerySection';
 import { ReviewsSection } from './components/ReviewsSection';
 import { CartDrawer } from './components/CartDrawer';
 import { StockNotificationModal } from './components/StockNotificationModal';
@@ -28,6 +29,8 @@ import { Footer } from './components/Footer';
 import { ProductSkeleton } from './components/ProductSkeleton';
 import { LogoutOverlay } from './components/LogoutOverlay';
 import { GiftAssistantModal } from './components/GiftAssistantModal';
+import { SEOHead } from './components/SEOHead';
+import { PriceInquiryModal } from './components/PriceInquiryModal';
 import { 
   Smartphone, 
   Search, 
@@ -44,8 +47,23 @@ import {
   Sliders,
   Newspaper,
   Loader2,
-  ArrowRight
+  ArrowRight,
+  SearchX,
+  Tag
 } from 'lucide-react';
+
+// Helper for precise search text normalization (Persian digits & characters)
+const normalizeSearchText = (text: string): string => {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/ي/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/۰/g, '0').replace(/۱/g, '1').replace(/۲/g, '2').replace(/۳/g, '3').replace(/۴/g, '4')
+    .replace(/۵/g, '5').replace(/۶/g, '6').replace(/۷/g, '7').replace(/۸/g, '8').replace(/۹/g, '9')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim();
+};
 
 // Lazy-load AdminDashboardModal (~100KB) for optimized performance and bundle splitting
 const AdminDashboardModal = React.lazy(() => import('./components/AdminDashboardModal'));
@@ -167,6 +185,7 @@ export default function App() {
   const [isGiftAssistantOpen, setIsGiftAssistantOpen] = useState<boolean>(false);
   const [isShowroomOpen, setIsShowroomOpen] = useState<boolean>(false);
   const [selectedProductFor360, setSelectedProductFor360] = useState<Product | null>(null);
+  const [priceInquiryProduct, setPriceInquiryProduct] = useState<Product | null>(null);
 
   // Fetch real products from Firestore API
   useEffect(() => {
@@ -212,8 +231,37 @@ export default function App() {
         setIsLoadingProducts(false);
       }
     }
+
+    async function loadSiteConfig() {
+      try {
+        const res = await fetch('/api/site-config');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success && data.config) {
+            setSiteContent((prev) => ({ ...prev, ...data.config }));
+          }
+        }
+      } catch (err) {
+        console.error('Error loading site config:', err);
+      }
+    }
+
     loadProducts();
+    loadSiteConfig();
   }, []);
+
+  const handleUpdateSiteContent = async (content: SiteContentConfig) => {
+    setSiteContent(content);
+    try {
+      await fetch('/api/admin/site-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(content),
+      });
+    } catch (err) {
+      console.error('Error saving site config:', err);
+    }
+  };
 
   const handleLoginSuccess = (user: UserAccount) => {
     setCurrentUser(user);
@@ -422,16 +470,71 @@ export default function App() {
     return products.slice(0, 4);
   }, [products]);
 
-  // Filtered Products Calculation
-  const filteredProducts = useMemo(() => {
+  // Products matching all search & non-category filters (used for dynamic Category Chips)
+  const searchMatchedProductsBeforeCategory = useMemo(() => {
+    const query = normalizeSearchText(searchQuery);
+    const queryTerms = query ? query.split(/\s+/).filter(Boolean) : [];
+
     return products.filter((product) => {
-      // Search
-      const matchSearch = 
-        !searchQuery ||
-        product.persianName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.description.toLowerCase().includes(searchQuery.toLowerCase());
+      let matchSearch = true;
+      if (queryTerms.length > 0) {
+        const normPersianName = normalizeSearchText(product.persianName);
+        const normEnglishName = normalizeSearchText(product.name);
+        const normBrand = normalizeSearchText(product.brand);
+        const normCategory = normalizeSearchText(product.category);
+        const normDesc = normalizeSearchText(product.description || '');
+
+        matchSearch = queryTerms.every((term) =>
+          normPersianName.includes(term) ||
+          normEnglishName.includes(term) ||
+          normBrand.includes(term) ||
+          normCategory.includes(term) ||
+          normDesc.includes(term)
+        );
+      }
+
+      const matchBrand = selectedBrand === 'all' || product.brand.toLowerCase() === selectedBrand.toLowerCase();
+      const matchInstallment = !onlyInstallment || product.isInstallment;
+      const matchOffers = !onlyOffers || product.isOffer;
+      const matchMaxPrice = maxPriceFilter >= 120000000 || product.priceToman <= maxPriceFilter;
+      const matchInStock = !onlyInStock || (product.stock && product.stock > 0);
+
+      return matchSearch && matchBrand && matchInstallment && matchOffers && matchMaxPrice && matchInStock;
+    });
+  }, [products, searchQuery, selectedBrand, onlyInstallment, onlyOffers, maxPriceFilter, onlyInStock]);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: searchMatchedProductsBeforeCategory.length };
+    searchMatchedProductsBeforeCategory.forEach((p) => {
+      counts[p.category] = (counts[p.category] || 0) + 1;
+    });
+    return counts;
+  }, [searchMatchedProductsBeforeCategory]);
+
+  // Filtered Products Calculation (Precise & Strict Matching)
+  const filteredProducts = useMemo(() => {
+    const query = normalizeSearchText(searchQuery);
+    const queryTerms = query ? query.split(/\s+/).filter(Boolean) : [];
+
+    return products.filter((product) => {
+      // Precise multi-term Search
+      let matchSearch = true;
+      if (queryTerms.length > 0) {
+        const normPersianName = normalizeSearchText(product.persianName);
+        const normEnglishName = normalizeSearchText(product.name);
+        const normBrand = normalizeSearchText(product.brand);
+        const normCategory = normalizeSearchText(product.category);
+        const normDesc = normalizeSearchText(product.description || '');
+
+        // Every search word/term must match at least one field of the product
+        matchSearch = queryTerms.every((term) =>
+          normPersianName.includes(term) ||
+          normEnglishName.includes(term) ||
+          normBrand.includes(term) ||
+          normCategory.includes(term) ||
+          normDesc.includes(term)
+        );
+      }
 
       // Category
       const matchCategory = selectedCategory === 'all' || product.category === selectedCategory;
@@ -517,6 +620,7 @@ export default function App() {
 
   return (
     <div className="relative min-h-screen bg-[#f8f9fa] dark:bg-[#121316] text-[#1f1f1f] dark:text-[#e3e2e6] font-['Vazirmatn',sans-serif] selection:bg-[#d3e3fd] selection:text-[#041e49] overflow-x-hidden">
+      <SEOHead />
       
       {/* Splash Screen */}
       {showSplash && (
@@ -525,9 +629,16 @@ export default function App() {
 
       {/* Header */}
       <Header
+        products={products}
+        onSelectProduct={(product) => setSelectedProductDetail(product)}
         cartCount={cartItems.reduce((acc, item) => acc + item.quantity, 0)}
         compareCount={comparedProducts.length}
         wishlistCount={userProfile.wishlistIds.length}
+        searchQuery={searchQuery}
+        setSearchQuery={(q) => {
+          setSearchQuery(q);
+          if (q.trim()) setShowFullCatalog(true);
+        }}
         onOpenWishlist={() => {
           setIsProfileEditDirect(false);
           setIsUserProfileOpen(true);
@@ -679,22 +790,35 @@ export default function App() {
                 
                 {/* Category Pills */}
                 <div className="flex flex-wrap gap-2">
-                  {categories.map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => {
-                        setSelectedCategory(cat.id);
-                        setShowFullCatalog(true);
-                      }}
-                      className={`px-4 py-2 text-xs font-medium transition rounded-full ${
-                        selectedCategory === cat.id
-                          ? 'bg-[#0b57d0] text-white dark:bg-[#a8c7fa] dark:text-[#062e6f] shadow-sm font-semibold'
-                          : 'bg-[#f0f4f9] dark:bg-[#28292e] text-[#444746] dark:text-[#c4c7c5] border border-[#e1e3e1] dark:border-[#33353b] hover:bg-[#e1e3e1]'
-                      }`}
-                    >
-                      {cat.name}
-                    </button>
-                  ))}
+                  {categories.map((cat) => {
+                    const count = categoryCounts[cat.id] || 0;
+                    const isSelected = selectedCategory === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => {
+                          setSelectedCategory(cat.id);
+                          setShowFullCatalog(true);
+                        }}
+                        className={`px-4 py-2 text-xs font-medium transition rounded-full flex items-center gap-2 cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#0b57d0] text-white dark:bg-[#a8c7fa] dark:text-[#062e6f] shadow-sm font-semibold'
+                            : 'bg-[#f0f4f9] dark:bg-[#28292e] text-[#444746] dark:text-[#c4c7c5] border border-[#e1e3e1] dark:border-[#33353b] hover:bg-[#e1e3e1]'
+                        }`}
+                      >
+                        <span>{cat.name}</span>
+                        {count > 0 && (
+                          <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                            isSelected
+                              ? 'bg-white/20 dark:bg-[#062e6f]/20 font-bold'
+                              : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                          }`}>
+                            {count.toLocaleString('fa-IR')}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* Brand Filter & Search */}
@@ -830,6 +954,54 @@ export default function App() {
               </div>
             </div>
 
+            {/* Dynamic Quick Category Chips Bar for Search / Filter Results */}
+            {searchQuery.trim() && (
+              <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent dark:from-amber-500/15 dark:via-amber-500/5 dark:to-transparent border border-amber-500/25 dark:border-amber-500/30 rounded-2xl p-4 space-y-3 animate-fadeIn mb-2 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs sm:text-sm font-black text-slate-900 dark:text-amber-300">
+                    <Tag className="w-4 h-4 text-amber-500 animate-pulse" />
+                    <span>دسته‌بندی‌های سریع نتایج برای «<span className="text-amber-600 dark:text-amber-400 font-extrabold">{searchQuery.trim()}</span>»:</span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium font-mono">
+                    کل نتایج این عبارت: {searchMatchedProductsBeforeCategory.length.toLocaleString('fa-IR')} کالا
+                  </span>
+                </div>
+
+                {/* Chips List */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {categories.map((cat) => {
+                    const count = categoryCounts[cat.id] || 0;
+                    if (cat.id !== 'all' && count === 0) return null; // Hide categories with 0 count for this search term
+                    const isSelected = selectedCategory === cat.id;
+
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => {
+                          setSelectedCategory(cat.id);
+                          setShowFullCatalog(true);
+                        }}
+                        className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-2 cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-500 text-slate-950 shadow-md font-black ring-2 ring-amber-400/50 scale-105'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-slate-750'
+                        }`}
+                      >
+                        <span>{cat.name}</span>
+                        <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                          isSelected
+                            ? 'bg-slate-950/20 text-slate-950 font-bold'
+                            : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                        }`}>
+                          {count.toLocaleString('fa-IR')}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Product Grid */}
             {isLoadingProducts ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -838,22 +1010,51 @@ export default function App() {
                 ))}
               </div>
             ) : filteredProducts.length === 0 ? (
-              <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center space-y-3">
-                <Smartphone className="w-12 h-12 text-slate-300 mx-auto" />
-                <h3 className="text-base font-bold text-slate-900">هیچ محصولی با مشخصات انتخابی شما یافت نشد.</h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  فیلترهای جستجو را بازنشانی کنید یا با مشاور هوشمند AI تماس بگیرید.
-                </p>
-                <button
-                  onClick={() => {
-                    setSelectedCategory('all');
-                    setSelectedBrand('all');
-                    setSearchQuery('');
-                  }}
-                  className="mt-2 text-xs font-bold bg-slate-950 text-white px-5 py-2.5 rounded-xl hover:bg-slate-800 transition"
-                >
-                  بازنشانی فیلترها
-                </button>
+              <div className="bg-[#f0f4f9] dark:bg-[#1e1f23] border border-[#e1e3e1] dark:border-[#33353b] rounded-3xl p-10 sm:p-14 text-center space-y-4 shadow-sm animate-fadeIn">
+                <div className="w-16 h-16 bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mx-auto border border-rose-500/20">
+                  <SearchX className="w-8 h-8" />
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-xl font-black text-[#1f1f1f] dark:text-white">
+                    پیدا نشد!
+                  </h3>
+                  <p className="text-xs sm:text-sm text-[#444746] dark:text-[#c4c7c5] max-w-md mx-auto leading-relaxed font-medium">
+                    {searchQuery.trim() ? (
+                      <>
+                        هیچ محصولی با عبارت «<span className="font-extrabold text-rose-600 dark:text-rose-400">{searchQuery.trim()}</span>» در فروشگاه ستاره یافت نشد.
+                      </>
+                    ) : (
+                      <>هیچ محصولی مطابق با فیلترهای انتخابی شما در فروشگاه یافت نشد.</>
+                    )}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
+                  <button
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedCategory('all');
+                      setSelectedBrand('all');
+                      setMaxPriceFilter(120000000);
+                      setOnlyInStock(false);
+                      setOnlyOffers(false);
+                      setOnlyInstallment(false);
+                    }}
+                    className="bg-[#0b57d0] hover:bg-[#0842a0] dark:bg-[#a8c7fa] dark:hover:bg-[#d3e3fd] text-white dark:text-[#062e6f] font-semibold text-xs px-6 py-3 rounded-full shadow-sm transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <RotateCw className="w-4 h-4" />
+                    <span>پاک کردن عبارت جستجو و فیلترها</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsAiAdvisorOpen(true)}
+                    className="bg-[#f0f4f9] dark:bg-[#28292e] border border-[#c4c7c5] dark:border-[#444746] text-[#1f1f1f] dark:text-white hover:bg-[#e1e3e1] font-semibold text-xs px-6 py-3 rounded-full shadow-sm transition flex items-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <span>سوال از مشاور هوشمند (AI)</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -870,12 +1071,16 @@ export default function App() {
                     onOpenInstallment={(p) => handleOpenInstallmentForProduct(p.priceToman)}
                     onOpen360={(p) => setSelectedProductFor360(p)}
                     onOpenStockNotify={(p) => setStockNotifyProduct(p)}
+                    onOpenPriceInquiry={(p) => setPriceInquiryProduct(p)}
                   />
                 ))}
               </div>
             )}
           </div>
         )}
+
+        {/* Real Store Photo Gallery Section */}
+        <StoreGallerySection />
 
         {/* Customer Reviews Section */}
         <ReviewsSection />
@@ -905,7 +1110,7 @@ export default function App() {
             usersList={usersList}
             onUpdateUsersList={(users) => setUsersList(users)}
             siteContent={siteContent}
-            onUpdateSiteContent={(content) => setSiteContent(content)}
+            onUpdateSiteContent={handleUpdateSiteContent}
             usedPhones={usedPhones}
             onUpdateUsedPhones={(phones) => setUsedPhones(phones)}
             coupons={coupons}
@@ -1003,6 +1208,15 @@ export default function App() {
         onOpenStockNotify={(p) => setStockNotifyProduct(p)}
         allProducts={products}
         onSelectProduct={(p) => setSelectedProductDetail(p)}
+        currentUser={currentUser}
+        onOpenPriceInquiry={(p) => setPriceInquiryProduct(p)}
+      />
+
+      <PriceInquiryModal
+        product={priceInquiryProduct}
+        isOpen={Boolean(priceInquiryProduct)}
+        onClose={() => setPriceInquiryProduct(null)}
+        onAddToCart={(p) => handleAddToCart(p)}
       />
 
       <StockNotificationModal

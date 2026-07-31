@@ -1,4 +1,4 @@
-import { BlogArticle, ProductQA, UserProfile, Coupon, UserAccount, SiteContentConfig } from '../types';
+import { BlogArticle, ProductQA, Review, UserProfile, Coupon, UserAccount, SiteContentConfig } from '../types';
 
 export const INITIAL_USERS_LIST: UserAccount[] = [
   {
@@ -73,7 +73,8 @@ export const INITIAL_USERS_LIST: UserAccount[] = [
 
 export const INITIAL_SITE_CONTENT: SiteContentConfig = {
   topBannerText: 'فروشگاه موبایل ستاره مبارکه (امتیاز ۴.۸ از ۵)',
-  storePhone: '۰۳۱-۵۲۴۱NTc5',
+  storePhone: '031 5241 5779',
+  storePhone2: '09131112233',
   workingHours: 'هم‌اکنون باز است (۱۰:۳۰ الی ۲۱:۳۰)',
   isOpenNow: true,
   heroTitle: 'مرکز تخصصی فروش اقساطی گوشی و لوازم جانبی در مبارکه',
@@ -92,9 +93,44 @@ export const INITIAL_SITE_CONTENT: SiteContentConfig = {
   feature4Desc: 'ارائه قطعات اورجینال و تعمیرات سخت‌افزاری معتبر',
   catalogTitle: 'جدیدترین گوشی‌ها و لوازم جانبی',
   catalogSubtitle: 'بهترین قیمت روز در بازار مبارکه و اصفهان با تحویل فوری',
-  storeAddress: 'مبارکه، خیابان حافظ شرقی، روبروی بانک ملی، فروشگاه موبایل ستاره',
+  storeAddress: 'اصفهان، مبارکه، خیابان حافظ شرقی، روبروی بانک ملی، فروشگاه موبایل ستاره',
   instagramHandle: 'setareh_mobile_mobarakeh',
-  whatsappNumber: '09130000000'
+  telegramHandle: 'setarehmobile_official',
+  whatsappNumber: '09130000000',
+  neshanMapLink: 'https://neshan.org/maps/search/8GR3%2BVW6',
+  baladMapLink: 'https://balad.ir/search?q=8GR3%2BVW6',
+  googleMapsLink: 'https://www.google.com/maps/search/?api=1&query=8GR3%2BVW6+Mobarakeh',
+  productCtaMode: 'inquiry_modal',
+  productCtaButtonText: 'استعلام قیمت لحظه‌ای',
+  productCtaCustomLink: 'https://wa.me/989130000000',
+  heroSliders: [
+    {
+      id: 'slider-1',
+      title: 'پرچم‌داران سری آیفون ۱۶ و ۱۵ با گارانتی اصلی',
+      subtitle: 'ارسال فوری در مبارکه + مهلت تست ۷ روزه ستاره',
+      image: 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?auto=format&fit=crop&q=80&w=1200',
+      badgeText: 'پیشنهاد ویژه',
+      isActive: true
+    },
+    {
+      id: 'slider-2',
+      title: 'فروش اقساطی بدون ضامن با کمترین پیش‌پرداخت',
+      subtitle: 'تنها با چک صیادی در اقساط ۳ تا ۲۴ ماهه',
+      image: 'https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?auto=format&fit=crop&q=80&w=1200',
+      badgeText: 'شرایط اقساطی',
+      isActive: true
+    }
+  ],
+  promoBanners: [
+    {
+      id: 'promo-1',
+      title: 'جشنواره تخفیف‌های طلایی لوازم جانبی اورجینال انکر و سامسونگ',
+      subtitle: 'شارژر اصلی، هندزفری بی‌سیم و کاورهای ضدضربه با قیمت عمده',
+      image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?auto=format&fit=crop&q=80&w=800',
+      badgeText: 'حراج ویژه جانبی',
+      isActive: true
+    }
+  ]
 };
 
 export const INITIAL_USER_PROFILE: UserProfile = {
@@ -201,6 +237,81 @@ export const BLOG_ARTICLES: BlogArticle[] = [
   }
 ];
 
+export const MOCK_PRODUCT_REVIEWS: Record<string, Review[]> = {
+  'p-1': [
+    {
+      id: 'rev-101',
+      author: 'امیرحسین رضایی',
+      rating: 5,
+      date: '۴ مرداد ۱۴۰۳',
+      comment: 'گوشی فوق‌العاده‌ایه، رنگ تیتانیوم صحرایی رو حضوری از فروشگاه مبارکه تحویل گرفتم. شارژدهی باتری نسبت به آیفون ۱۵ پرو مکس حداقل ۲۰ درصد بهتر شده و دکمه جدید کنترل دوربین هم واسه عکاسی خیلی کاربردیه.',
+      location: 'مبارکه',
+      verified: true,
+      likes: 18,
+      dislikes: 1
+    },
+    {
+      id: 'rev-102',
+      author: 'مهدیه خسروی',
+      rating: 5,
+      date: '۲۸ تیر ۱۴۰۳',
+      comment: 'خرید اقساطی بدون ضامن از ستاره خیلی راحت انجام شد. رفتار پرسنل فروشگاه فوق‌العاده محترمانه بود و نیم ساعته رجیستری رو فعال کردن.',
+      location: 'مبارکه',
+      verified: true,
+      likes: 12,
+      dislikes: 0
+    },
+    {
+      id: 'rev-103',
+      author: 'کامران بابایی',
+      rating: 4,
+      date: '۱۵ تیر ۱۴۰۳',
+      comment: 'کیفیت ساخت و صفحه نمایش محشره. تنها نکته منفی وزنش هست که بعد نیم ساعت عکاسی مداوم کمی دست رو خسته میکنه ولی قدرت پردازنده A18 Pro همه چیو جبران میکنه.',
+      location: 'اصفهان',
+      verified: true,
+      likes: 8,
+      dislikes: 2
+    }
+  ],
+  'p-2': [
+    {
+      id: 'rev-201',
+      author: 'سیامک قربانی',
+      rating: 5,
+      date: '۳ مرداد ۱۴۰۳',
+      comment: 'قلم S-Pen و هوش مصنوعی Galaxy AI روی این گوشی غوغا میکنه. دوربین ۲۰۰ مگاپیکسلی تو شب عکسای بی‌پایانی ثبت میکنه. از ستاره ممنونم بابت ارسال ۲ ساعته.',
+      location: 'مبارکه',
+      verified: true,
+      likes: 15,
+      dislikes: 0
+    },
+    {
+      id: 'rev-202',
+      author: 'زهرا موسوی',
+      rating: 5,
+      date: '۲۰ تیر ۱۴۰۳',
+      comment: 'صفحه نمایش بدون انعکاس نوری این مدل نسبت به S24 اولترا بهبود چشمگیری داشته زیر نور مستقیم خورشید مبارکه راحت دیده میشه.',
+      location: 'دیزیچه',
+      verified: true,
+      likes: 9,
+      dislikes: 1
+    }
+  ],
+  'p-8': [
+    {
+      id: 'rev-801',
+      author: 'محمد جواد قاسمی',
+      rating: 5,
+      date: '۲۹ تیر ۱۴۰۳',
+      comment: 'بهترین پاوربانک بازار همینه. لپ‌تاپ مک‌بوک و آیفون رو همزمان با سرعت بالا شارژ میکنه. بدنه مقاومی داره و صفحه نمایش دیجیتالش دقیق درصد شارژ باقی‌مانده رو نشون میده.',
+      location: 'طالخونچه',
+      verified: true,
+      likes: 7,
+      dislikes: 0
+    }
+  ]
+};
+
 export const MOCK_PRODUCT_QAS: ProductQA[] = [
   {
     id: 'qa-1',
@@ -231,6 +342,22 @@ export const MOCK_PRODUCT_QAS: ProductQA[] = [
         isStaff: true,
         date: '۲۶ تیر ۱۴۰۳',
         text: 'S25 Ultra به دلیل محفظه بخار (Vapor Chamber) ۱.۵ برابر بزرگتر و تراشه ۳ نانومتری Snapdragon 8 Elite پایداری فریم‌ریت بالاتری در پابجی و کالاف دیوتی دارد.'
+      }
+    ]
+  },
+  {
+    id: 'qa-3',
+    productId: 'p-1',
+    author: 'محمد کشاورز',
+    date: '۲۹ تیر ۱۴۰۳',
+    question: 'امکان خرید اقساطی با سفته صیادی هم وجود داره یا حتما باید چک صیادی بنفش ارائه بدیم؟',
+    answers: [
+      {
+        id: 'ans-3',
+        author: 'بخش اعتبارات اقساطی ستاره',
+        isStaff: true,
+        date: '۳۰ تیر ۱۴۰۳',
+        text: 'سلام کاربر عزیز. هر دو حالت چک صیادی بنفش و سفته الکترونیک بانکی امکان‌پذیر است. جهت استعلام دقیق می‌توانید دکمه "محاسبه اقساط" را بزنید یا با شماره فروشگاه ۵۲۴۱NTc5 تماس بگیرید.'
       }
     ]
   }

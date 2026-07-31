@@ -56,10 +56,13 @@ import {
   MessageSquare,
   Crop,
   Zap,
-  Sliders
+  Sliders,
+  Database,
+  Download
 } from 'lucide-react';
-import { Product, Order, UserAccount, SiteContentConfig, UserRole, UsedPhone, Coupon } from '../types';
+import { Product, Order, UserAccount, SiteContentConfig, UserRole, UsedPhone, Coupon, BannerItem } from '../types';
 import { USED_PHONES_LIST } from '../data/usedPhonesData';
+import { INITIAL_SITE_CONTENT } from '../data/mockData';
 import { OfficialInvoiceModal } from './OfficialInvoiceModal';
 
 export interface AdminActivityLog {
@@ -393,6 +396,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setProductDraftSavedTime(null);
   };
 
+  // CMS Management States
+  const [cmsSubTab, setCmsSubTab] = useState<'banners' | 'contact' | 'cta' | 'general'>('banners');
+  const [localCmsConfig, setLocalCmsConfig] = useState<SiteContentConfig>(() => ({
+    ...INITIAL_SITE_CONTENT,
+    ...(siteContent || {})
+  }));
+  const [editingSlider, setEditingSlider] = useState<BannerItem | null>(null);
+  const [isNewSlider, setIsNewSlider] = useState<boolean>(false);
+  const [editingPromo, setEditingPromo] = useState<BannerItem | null>(null);
+  const [isNewPromo, setIsNewPromo] = useState<boolean>(false);
+  const [cmsSaveStatus, setCmsSaveStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (siteContent) {
+      setLocalCmsConfig((prev) => ({ ...prev, ...siteContent }));
+    }
+  }, [siteContent]);
+
   // Wallet Charge / Edit State
   const [walletEditUser, setWalletEditUser] = useState<UserAccount | null>(null);
   const [walletEditMode, setWalletEditMode] = useState<'add' | 'subtract' | 'set'>('add');
@@ -415,6 +436,79 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const canEditContent = isSuperAdmin || isContentManager;
   const canDeleteContent = isSuperAdmin;
   const canManageUsers = isSuperAdmin;
+
+  // Download Database Backup (JSON)
+  const [isExportingBackup, setIsExportingBackup] = useState(false);
+
+  const handleDownloadDatabaseBackup = async () => {
+    setIsExportingBackup(true);
+    try {
+      let backupPayload: any = null;
+
+      // Try fetching server-side backup from /api/admin/backup if token exists
+      if (adminToken) {
+        try {
+          const res = await fetch('/api/admin/backup', {
+            headers: {
+              Authorization: `Bearer ${adminToken}`,
+            },
+          });
+          if (res.ok) {
+            backupPayload = await res.json();
+          }
+        } catch (e) {
+          console.warn('Server backup endpoint failed, falling back to local state export:', e);
+        }
+      }
+
+      // Fallback if no server response or token missing
+      if (!backupPayload) {
+        backupPayload = {
+          app: "فروشگاه موبایل ستاره مبارکه",
+          version: "1.0.0",
+          exportedAt: new Date().toISOString(),
+          summary: {
+            totalProducts: products.length,
+            totalUsers: usersList.length,
+            totalOrders: dbOrders.length,
+            totalUsedPhones: usedPhones.length,
+            totalCoupons: coupons.length,
+            totalStockNotifications: stockNotifications.length,
+          },
+          data: {
+            products,
+            users: usersList,
+            orders: dbOrders,
+            usedPhones,
+            coupons,
+            stockNotifications,
+            siteConfig: localCmsConfig || siteContent,
+          }
+        };
+      }
+
+      // Download file
+      const jsonStr = JSON.stringify(backupPayload, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const dateStr = new Date().toISOString().split('T')[0];
+      link.href = url;
+      link.setAttribute('download', `setareh_mobile_database_backup_${dateStr}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      logActivity('دانلود پشتیبان', `دانلود فایل پشتیبان کامل دیتابیس (JSON) شامل ${products.length} کالا و ${usersList.length} کاربر`, 'info');
+      alert('نسخه پشتیبان کامل دیتابیس (JSON) با موفقیت دانلود شد.');
+    } catch (err: any) {
+      console.error('Error exporting database backup:', err);
+      alert('خطا در دانلود نسخه پشتیبان دیتابیس: ' + err.message);
+    } finally {
+      setIsExportingBackup(false);
+    }
+  };
 
   // Global In-App Delete Confirmation State
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
@@ -928,6 +1022,114 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     }
   };
 
+  // Stock SMS Notification Broadcasting States & Actions
+  const [selectedStockIds, setSelectedStockIds] = useState<string[]>([]);
+  const [stockSmsModalOpen, setStockSmsModalOpen] = useState(false);
+  const [stockSmsMode, setStockSmsMode] = useState<'bulk_all' | 'product_group' | 'selected_items' | 'single'>('bulk_all');
+  const [stockSmsSelectedProduct, setStockSmsSelectedProduct] = useState<string>('ALL');
+  const [stockSmsSingleItem, setStockSmsSingleItem] = useState<any | null>(null);
+  const [stockSmsTemplate, setStockSmsTemplate] = useState<string>(
+    'سلام، محصول «{نام_محصول}» در فروشگاه موبایل ستاره مبارکه موجود گردید! جهت مشاهده و ثبت سفارش وارد سایت شوید: https://setareh.shop'
+  );
+  const [isSendingStockSms, setIsSendingStockSms] = useState(false);
+  const [stockSmsFilterStatus, setStockSmsFilterStatus] = useState<'ALL' | 'PENDING' | 'SENT'>('ALL');
+  const [stockSmsFilterProduct, setStockSmsFilterProduct] = useState<string>('ALL');
+  const [stockSmsSearch, setStockSmsSearch] = useState<string>('');
+
+  const handleOpenSmsModal = (
+    mode: 'bulk_all' | 'product_group' | 'selected_items' | 'single',
+    prodName?: string,
+    singleItem?: any
+  ) => {
+    setStockSmsMode(mode);
+    if (prodName) setStockSmsSelectedProduct(prodName);
+    if (singleItem) {
+      setStockSmsSingleItem(singleItem);
+      setStockSmsTemplate(
+        `سلام، محصول «${singleItem.productName}» در فروشگاه موبایل ستاره مبارکه موجود شد! جهت مشاهده و خرید آنلاین کلیک کنید.`
+      );
+    } else if (prodName && prodName !== 'ALL') {
+      setStockSmsTemplate(
+        `سلام، محصول «${prodName}» در فروشگاه موبایل ستاره مبارکه موجود گردید! جهت مشاهده و ثبت سفارش وارد شوید: https://setareh.shop`
+      );
+    } else {
+      setStockSmsTemplate(
+        'سلام، محصول «{نام_محصول}» در فروشگاه موبایل ستاره مبارکه موجود گردید! جهت مشاهده و ثبت سفارش وارد شوید: https://setareh.shop'
+      );
+    }
+    setStockSmsModalOpen(true);
+  };
+
+  const handleSendStockSms = async () => {
+    if (!adminToken) {
+      alert('جلسه مدیریت نامعتبر است. لطفاً مجدداً وارد پنل شوید.');
+      return;
+    }
+
+    setIsSendingStockSms(true);
+    try {
+      if (stockSmsMode === 'single' && stockSmsSingleItem) {
+        const res = await fetch('/api/admin/stock-notifications/send-single-sms', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            notificationId: stockSmsSingleItem.id,
+            message: stockSmsTemplate,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(data.message || 'پیامک اطلاع‌رسانی با موفقیت ارسال شد.');
+          logActivity('ارسال پیامک تکی موجودی', `ارسال پیامک اطلاع‌رسانی به شماره ${data.phone} برای ${stockSmsSingleItem.productName}`, 'info');
+        } else {
+          alert(data.error || 'خطا در ارسال پیامک.');
+        }
+      } else {
+        let targetIds: string[] | undefined = undefined;
+        let targetProdName: string | undefined = undefined;
+
+        if (stockSmsMode === 'selected_items') {
+          targetIds = selectedStockIds;
+        } else if (stockSmsMode === 'product_group') {
+          targetProdName = stockSmsSelectedProduct;
+        }
+
+        const res = await fetch('/api/admin/stock-notifications/send-bulk-sms', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            notificationIds: targetIds,
+            productName: targetProdName,
+            messageTemplate: stockSmsTemplate,
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(data.message || 'پیامک‌های اطلاع‌رسانی با موفقیت ارسال شد.');
+          logActivity('ارسال انبوه پیامک موجودی', `ارسال پیامک موجودی برای ${data.count} درخواست مشتری (${data.uniquePhonesCount} شماره همراه مجزا)`, 'info');
+          setSelectedStockIds([]);
+        } else {
+          alert(data.error || 'خطا در ارسال انبوه پیامک.');
+        }
+      }
+
+      setStockSmsModalOpen(false);
+      fetchStockNotifications(adminToken);
+    } catch (err: any) {
+      console.error('Error sending stock notification SMS:', err);
+      alert('خطا در ارسال پیامک: ' + err.message);
+    } finally {
+      setIsSendingStockSms(false);
+    }
+  };
+
   useEffect(() => {
     if (isUnlocked && adminToken) {
       fetchDbOrders(adminToken);
@@ -1157,6 +1359,19 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
           <div className="flex items-center gap-3">
             <button
+              onClick={handleDownloadDatabaseBackup}
+              disabled={isExportingBackup}
+              className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-2 rounded-lg transition font-bold flex items-center gap-1.5 shadow disabled:opacity-50"
+              title="دانلود پشتیبان کامل دیتابیس شامل محصولات و کاربران به صورت فایل JSON"
+            >
+              {isExportingBackup ? (
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+              ) : (
+                <Download className="w-4 h-4 text-emerald-400" />
+              )}
+              <span>{isExportingBackup ? 'در حال تهیه پشتیبان...' : 'دانلود پشتیبان JSON'}</span>
+            </button>
+            <button
               onClick={handleLogout}
               className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg transition"
             >
@@ -1365,6 +1580,39 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       <span>فعال و ایمن (RLS)</span>
                     </div>
                   </div>
+                </div>
+
+                {/* Database Backup & Maintenance Section */}
+                <div className="bg-slate-950/80 border border-emerald-500/30 p-5 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 bg-emerald-500/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center text-emerald-400 shrink-0">
+                      <Database className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-white flex items-center gap-2">
+                        <span>پشتیبان‌گیری کامل دیتابیس (JSON Backup)</span>
+                        <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
+                          پشتیبان یکپارچه
+                        </span>
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-1">
+                        دانلود فایل JSON شامل اطلاعات محصولات ({products.length})، حساب‌های کاربران ({usersList.length})، سفارش‌ها ({dbOrders.length}) و تنظیمات سایت.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleDownloadDatabaseBackup}
+                    disabled={isExportingBackup}
+                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-5 py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 shrink-0 border border-emerald-300/30 cursor-pointer disabled:opacity-50"
+                  >
+                    {isExportingBackup ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
+                    <span>{isExportingBackup ? 'در حال تهیه پشتیبان...' : 'دانلود نسخه پشتیبان دیتابیس (JSON)'}</span>
+                  </button>
                 </div>
 
                 {/* Quick Activity Logs Preview in Dashboard */}
@@ -3322,54 +3570,828 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             {/* CMS Banner Editor Tab View */}
             {activeTab === 'cms_editor' && (
               <div className="space-y-6 font-['Vazirmatn']">
-                <div className="bg-slate-950/60 p-5 border border-slate-800 rounded-2xl space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                
+                {/* Header & Main Save Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-950/80 p-5 border border-slate-800 rounded-2xl shadow-xl">
+                  <div>
                     <h3 className="text-base font-black text-white flex items-center gap-2">
                       <Edit3 className="w-5 h-5 text-yellow-400" />
-                      <span>مدیریت بنر بالای سایت و اطلاع‌رسانی‌ها</span>
+                      <span>پنل جامع مدیریت محتوای آنلاین سایت (CMS)</span>
                     </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      ویرایش و کنترل کامل بنرها، اسلایدرها، اطلاعات تماس، لینک‌های مسیریابی و دکمه‌های استعلام بدون تغییر کد
+                    </p>
                   </div>
 
-                  <div className="space-y-3 max-w-2xl text-xs">
-                    <div>
-                      <label className="text-slate-300 font-bold block mb-1">متن نوار بالای سایت (Top Banner):</label>
-                      <input
-                        type="text"
-                        defaultValue={siteContent?.topBannerText || 'موبایل ستاره مبارکه (امتیاز ۴.۸ از ۵)'}
-                        onBlur={(e) => {
-                          if (siteContent) {
-                            onUpdateSiteContent({ ...siteContent, topBannerText: e.target.value });
-                          }
-                        }}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-yellow-400"
-                      />
-                    </div>
+                  <div className="flex items-center gap-3">
+                    {cmsSaveStatus && (
+                      <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-400 animate-fadeIn">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>{cmsSaveStatus}</span>
+                      </div>
+                    )}
 
-                    <div>
-                      <label className="text-slate-300 font-bold block mb-1">شماره تماس پشتیبانی فروشگاه:</label>
-                      <input
-                        type="text"
-                        defaultValue={siteContent?.storePhone || '031 5241 5779'}
-                        onBlur={(e) => {
-                          if (siteContent) {
-                            onUpdateSiteContent({ ...siteContent, storePhone: e.target.value });
-                          }
-                        }}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-yellow-400 font-mono"
-                        dir="ltr"
-                      />
-                    </div>
-
-                    <div className="pt-2">
-                      <button
-                        onClick={() => alert('تغییرات محتوایی با موفقیت ذخیره شد!')}
-                        className="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black text-xs px-6 py-2.5 rounded-xl transition shadow"
-                      >
-                        ذخیره تنظیمات CMS
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => {
+                        onUpdateSiteContent(localCmsConfig);
+                        addActivityLog('ویرایش محتوا', 'مدیریت ستاره', 'بروزرسانی کامل تنظیمات CMS و بنرهای سایت', 'success');
+                        setCmsSaveStatus('تغییرات با موفقیت در دیتابیس ذخیره شد!');
+                        setTimeout(() => setCmsSaveStatus(null), 4000);
+                      }}
+                      className="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black text-xs px-6 py-2.5 rounded-xl transition flex items-center gap-2 shadow-lg shadow-yellow-400/20"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>ذخیره همگانی تنظیمات در دیتابیس</span>
+                    </button>
                   </div>
                 </div>
+
+                {/* CMS Sub-Tabs Navigation */}
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
+                  {[
+                    { id: 'banners', label: '🖼️ اسلایدرها و بنرها' },
+                    { id: 'contact', label: '📞 اطلاعات تماس و مسیریابی' },
+                    { id: 'cta', label: '⚡ دکمه‌های استعلام و CTA' },
+                    { id: 'general', label: '✍️ تیترها و متون عمومی' }
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      onClick={() => setCmsSubTab(st.id as any)}
+                      className={`px-4 py-2 rounded-xl text-xs font-extrabold transition border ${
+                        cmsSubTab === st.id
+                          ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-md shadow-yellow-400/20'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Sub-Tab 1: Banners & Sliders */}
+                {cmsSubTab === 'banners' && (
+                  <div className="space-y-6">
+                    {/* Hero Sliders Management */}
+                    <div className="bg-slate-950/60 p-5 border border-slate-800 rounded-2xl space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-white flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-yellow-400" />
+                            <span>اسلایدر اصلی بالای سایت (Hero Slider)</span>
+                          </h4>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            بنرهای عریض بالای صفحه اصلی که تصاویر محصولات، جشنواره‌ها و شرایط اقساطی را نمایش می‌دهند.
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            setEditingSlider({
+                              id: `slider-${Date.now()}`,
+                              title: 'عنوان اسلایدر جدید ستاره',
+                              subtitle: 'توضیح کوتاه و جذاب بنر',
+                              image: 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?auto=format&fit=crop&q=80&w=1200',
+                              badgeText: 'ویژه ستاره',
+                              link: '/#catalog',
+                              isActive: true
+                            });
+                            setIsNewSlider(true);
+                          }}
+                          className="bg-yellow-400/10 hover:bg-yellow-400 hover:text-slate-950 text-yellow-400 border border-yellow-400/30 text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>افزودن اسلایدر جدید</span>
+                        </button>
+                      </div>
+
+                      {/* Sliders List */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {(localCmsConfig.heroSliders || []).map((slider, idx) => (
+                          <div
+                            key={slider.id}
+                            className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-3 relative overflow-hidden group hover:border-slate-700 transition"
+                          >
+                            <div className="h-32 bg-slate-950 rounded-xl overflow-hidden relative border border-slate-800">
+                              <img
+                                src={slider.image}
+                                alt={slider.title}
+                                className="w-full h-full object-cover"
+                              />
+                              {slider.badgeText && (
+                                <span className="absolute top-2 right-2 bg-yellow-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-md shadow">
+                                  {slider.badgeText}
+                                </span>
+                              )}
+                              <span className={`absolute bottom-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-md ${slider.isActive !== false ? 'bg-emerald-500/80 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                                {slider.isActive !== false ? 'فعال' : 'غیرفعال'}
+                              </span>
+                            </div>
+
+                            <div className="space-y-1">
+                              <h5 className="text-xs font-black text-white">{slider.title}</h5>
+                              <p className="text-[11px] text-slate-400 line-clamp-1">{slider.subtitle}</p>
+                              <div className="text-[10.5px] font-mono text-yellow-400/80 truncate">
+                                لینک: {slider.link || '-'}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => {
+                                    setEditingSlider({ ...slider });
+                                    setIsNewSlider(false);
+                                  }}
+                                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-yellow-400 rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <span>ویرایش</span>
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    const updatedSliders = (localCmsConfig.heroSliders || []).map((s) =>
+                                      s.id === slider.id ? { ...s, isActive: !s.isActive } : s
+                                    );
+                                    setLocalCmsConfig({ ...localCmsConfig, heroSliders: updatedSliders });
+                                  }}
+                                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition"
+                                >
+                                  {slider.isActive !== false ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
+                                </button>
+                              </div>
+
+                              <button
+                                onClick={() => {
+                                  const updatedSliders = (localCmsConfig.heroSliders || []).filter((s) => s.id !== slider.id);
+                                  setLocalCmsConfig({ ...localCmsConfig, heroSliders: updatedSliders });
+                                }}
+                                className="p-1.5 bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white rounded-lg transition"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Promo Banners Management */}
+                    <div className="bg-slate-950/60 p-5 border border-slate-800 rounded-2xl space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-white flex items-center gap-2">
+                            <Tag className="w-4 h-4 text-yellow-400" />
+                            <span>بنرهای تبلیغاتی و جشنواره‌های حراجی (Promo Banners)</span>
+                          </h4>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            بنرهای میانی سایت جهت معرفی تخفیف‌های ویژه، لوازم جانبی و جشنواره‌های فصلی.
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            setEditingPromo({
+                              id: `promo-${Date.now()}`,
+                              title: 'عنوان بنر تبلیغاتی جدید',
+                              subtitle: 'توضیحات حراج و تخفیف ویژه',
+                              image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?auto=format&fit=crop&q=80&w=800',
+                              badgeText: 'حراج جانبی',
+                              link: '/#catalog',
+                              isActive: true
+                            });
+                            setIsNewPromo(true);
+                          }}
+                          className="bg-yellow-400/10 hover:bg-yellow-400 hover:text-slate-950 text-yellow-400 border border-yellow-400/30 text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>افزودن بنر تبلیغاتی</span>
+                        </button>
+                      </div>
+
+                      {/* Promo Banners Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {(localCmsConfig.promoBanners || []).map((promo) => (
+                          <div
+                            key={promo.id}
+                            className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-3 relative overflow-hidden group hover:border-slate-700 transition"
+                          >
+                            <div className="h-28 bg-slate-950 rounded-xl overflow-hidden relative border border-slate-800">
+                              <img
+                                src={promo.image}
+                                alt={promo.title}
+                                className="w-full h-full object-cover"
+                              />
+                              {promo.badgeText && (
+                                <span className="absolute top-2 right-2 bg-yellow-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-md shadow">
+                                  {promo.badgeText}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="space-y-1">
+                              <h5 className="text-xs font-black text-white">{promo.title}</h5>
+                              <p className="text-[11px] text-slate-400 line-clamp-1">{promo.subtitle}</p>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                              <button
+                                onClick={() => {
+                                  setEditingPromo({ ...promo });
+                                  setIsNewPromo(false);
+                                }}
+                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-yellow-400 rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                <span>ویرایش بنر</span>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  const updated = (localCmsConfig.promoBanners || []).filter((p) => p.id !== promo.id);
+                                  setLocalCmsConfig({ ...localCmsConfig, promoBanners: updated });
+                                }}
+                                className="p-1.5 bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white rounded-lg transition"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub-Tab 2: Contact Info & Navigation Maps */}
+                {cmsSubTab === 'contact' && (
+                  <div className="bg-slate-950/60 p-5 border border-slate-800 rounded-2xl space-y-5">
+                    <div className="border-b border-slate-800 pb-3">
+                      <h4 className="text-sm font-black text-white flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-yellow-400" />
+                        <span>اطلاعات تماس، آدرس حضوری و لینک‌های مسیریابی</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        هر تغییری در این بخش فوراً در هدر، فوتر، صفحه تماس و نقشه اختصاصی مغازه بروزرسانی می‌شود.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <label className="text-slate-300 font-bold block mb-1">شماره تلفن ثابت اصلی مغازه:</label>
+                        <input
+                          type="text"
+                          value={localCmsConfig.storePhone}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, storePhone: e.target.value })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-400 font-mono"
+                          dir="ltr"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-300 font-bold block mb-1">شماره تلفن همراه / پشتیبانی دوم:</label>
+                        <input
+                          type="text"
+                          value={localCmsConfig.storePhone2 || ''}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, storePhone2: e.target.value })}
+                          placeholder="مثلاً: 0913 111 2233"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-400 font-mono"
+                          dir="ltr"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="text-slate-300 font-bold block mb-1">آدرس کامل حضوری فروشگاه:</label>
+                        <textarea
+                          rows={2}
+                          value={localCmsConfig.storeAddress}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, storeAddress: e.target.value })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-300 font-bold block mb-1">ساعت کاری مغازه:</label>
+                        <input
+                          type="text"
+                          value={localCmsConfig.workingHours}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, workingHours: e.target.value })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-400"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                        <input
+                          type="checkbox"
+                          id="isOpenNowToggle"
+                          checked={localCmsConfig.isOpenNow}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, isOpenNow: e.target.checked })}
+                          className="w-4 h-4 rounded border-slate-700 text-yellow-400 focus:ring-0 cursor-pointer"
+                        />
+                        <label htmlFor="isOpenNowToggle" className="text-xs font-bold text-white cursor-pointer">
+                          وضعیت فعلی: هم‌اکنون باز است (نمایش چراغ سبز در هدر)
+                        </label>
+                      </div>
+
+                      {/* Social Media Links */}
+                      <div className="md:col-span-2 pt-3 border-t border-slate-800 space-y-3">
+                        <h5 className="text-xs font-black text-yellow-400">شبکه‌های اجتماعی و پیام‌رسان‌ها:</h5>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-slate-400 block mb-1">آیدی اینستاگرام (Instagram):</label>
+                            <input
+                              type="text"
+                              value={localCmsConfig.instagramHandle}
+                              onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, instagramHandle: e.target.value })}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400 font-mono"
+                              dir="ltr"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-slate-400 block mb-1">آیدی تلگرام (Telegram):</label>
+                            <input
+                              type="text"
+                              value={localCmsConfig.telegramHandle || ''}
+                              onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, telegramHandle: e.target.value })}
+                              placeholder="مثلاً: setarehmobile_official"
+                              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400 font-mono"
+                              dir="ltr"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-slate-400 block mb-1">شماره واتساپ (WhatsApp):</label>
+                            <input
+                              type="text"
+                              value={localCmsConfig.whatsappNumber}
+                              onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, whatsappNumber: e.target.value })}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400 font-mono"
+                              dir="ltr"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Map Links */}
+                      <div className="md:col-span-2 pt-3 border-t border-slate-800 space-y-3">
+                        <h5 className="text-xs font-black text-yellow-400">لینک‌های مسیریابی آنلاین (نشان، بلد و گوگل مپ):</h5>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-slate-400 block mb-1">لینک مسیریاب نشان:</label>
+                            <input
+                              type="text"
+                              value={localCmsConfig.neshanMapLink || ''}
+                              onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, neshanMapLink: e.target.value })}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400 font-mono text-[11px]"
+                              dir="ltr"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-slate-400 block mb-1">لینک مسیریاب بلد:</label>
+                            <input
+                              type="text"
+                              value={localCmsConfig.baladMapLink || ''}
+                              onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, baladMapLink: e.target.value })}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400 font-mono text-[11px]"
+                              dir="ltr"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-slate-400 block mb-1">لینک گوگل مپ (Google Maps):</label>
+                            <input
+                              type="text"
+                              value={localCmsConfig.googleMapsLink || ''}
+                              onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, googleMapsLink: e.target.value })}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400 font-mono text-[11px]"
+                              dir="ltr"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub-Tab 3: CTA & Price Inquiry Buttons */}
+                {cmsSubTab === 'cta' && (
+                  <div className="bg-slate-950/60 p-5 border border-slate-800 rounded-2xl space-y-5">
+                    <div className="border-b border-slate-800 pb-3">
+                      <h4 className="text-sm font-black text-white flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-yellow-400" />
+                        <span>تنظیم دکمه‌های «استعلام قیمت روز» و «ارتباط مستقیم» زیر محصولات</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        بر اساس استراتژی فروشگاه نمایشگاهی آنلاین، نحوه عملکرد دکمه‌های خرید و استعلام را مشخص کنید.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+                      
+                      {/* CTA Mode Radio Options */}
+                      <div className="space-y-3">
+                        <label className="text-slate-200 font-black block">حالت عملکرد دکمه‌های زیر محصولات:</label>
+                        
+                        {[
+                          {
+                            id: 'inquiry_modal',
+                            title: '۱. مدال اختصاصی استعلام قیمت (پیش‌فرض پیشنهادی)',
+                            desc: 'باز شدن فرم پاپ‌آپ شیک جهت درخواست ثبت شماره یا تماس فوری تلفنی'
+                          },
+                          {
+                            id: 'whatsapp',
+                            title: '۲. انتقال مستقیم به واتساپ مغازه',
+                            desc: 'انتقال یک‌کلیک مشتری به واتساپ با متن خودکار: "سلام، استعلام قیمت گوشی..."'
+                          },
+                          {
+                            id: 'phone',
+                            title: '۳. تماس تلفنی مستقیم با فروشگاه',
+                            desc: 'شماره‌گیری مستقیم شماره ثابت مغازه (۰۳۱۵۲۴۱۵۷۷۹) در موبایل خریدار'
+                          },
+                          {
+                            id: 'custom_link',
+                            title: '۴. هدایت به لینک سفارشی',
+                            desc: 'انتقال کاربر به لینک کانال تلگرام، فرم ثبت‌نام یا پیام‌رسان دلخواه شما'
+                          }
+                        ].map((opt) => (
+                          <label
+                            key={opt.id}
+                            className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition ${
+                              (localCmsConfig.productCtaMode || 'inquiry_modal') === opt.id
+                                ? 'bg-yellow-400/10 border-yellow-400 text-white shadow-md shadow-yellow-400/5'
+                                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="ctaMode"
+                              value={opt.id}
+                              checked={(localCmsConfig.productCtaMode || 'inquiry_modal') === opt.id}
+                              onChange={() => setLocalCmsConfig({ ...localCmsConfig, productCtaMode: opt.id as any })}
+                              className="mt-0.5 text-yellow-400 focus:ring-0 cursor-pointer"
+                            />
+                            <div>
+                              <span className="font-extrabold text-xs block text-white">{opt.title}</span>
+                              <span className="text-[11px] text-slate-400 mt-0.5 block">{opt.desc}</span>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+
+                      {/* Customization Inputs & Preview */}
+                      <div className="space-y-4 bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+                        <div>
+                          <label className="text-slate-300 font-bold block mb-1">عنوان متن روی دکمه استعلام اصلی:</label>
+                          <input
+                            type="text"
+                            value={localCmsConfig.productCtaButtonText || 'استعلام قیمت لحظه‌ای'}
+                            onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, productCtaButtonText: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-400 font-bold"
+                          />
+                        </div>
+
+                        {(localCmsConfig.productCtaMode === 'custom_link') && (
+                          <div>
+                            <label className="text-slate-300 font-bold block mb-1">لینک هدف سفارشی (URL):</label>
+                            <input
+                              type="text"
+                              value={localCmsConfig.productCtaCustomLink || ''}
+                              onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, productCtaCustomLink: e.target.value })}
+                              placeholder="https://t.me/setarehmobile"
+                              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-400 font-mono text-xs"
+                              dir="ltr"
+                            />
+                          </div>
+                        )}
+
+                        {/* Live Product Card CTA Preview */}
+                        <div className="pt-3 border-t border-slate-800 space-y-2">
+                          <label className="text-xs font-bold text-yellow-400 block">پیش‌نمایش زنده نحوه نمایش دکمه‌ها برای خریدار:</label>
+                          
+                          <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-white">گوشی سامسونگ Galaxy S24 Ultra</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-400">
+                              <span>قیمت روز: ۶۸,۵۰۰,۰۰۰ تومان</span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-2">
+                              <button
+                                type="button"
+                                className="bg-yellow-400 text-slate-950 font-black text-[11px] py-2 px-3 rounded-xl flex items-center justify-center gap-1 shadow"
+                              >
+                                <span>{localCmsConfig.productCtaButtonText || 'استعلام قیمت لحظه‌ای'}</span>
+                              </button>
+                              
+                              <button
+                                type="button"
+                                className="bg-slate-800 text-slate-200 font-bold text-[11px] py-2 px-3 rounded-xl flex items-center justify-center gap-1 border border-slate-700"
+                              >
+                                <span>تماس با فروشگاه</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub-Tab 4: General Core Titles & Text */}
+                {cmsSubTab === 'general' && (
+                  <div className="bg-slate-950/60 p-5 border border-slate-800 rounded-2xl space-y-4 text-xs">
+                    <div className="border-b border-slate-800 pb-3">
+                      <h4 className="text-sm font-black text-white flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-yellow-400" />
+                        <span>تیترها، نوار بالای سایت و عناوین ویترین اصلی</span>
+                      </h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-slate-300 font-bold block mb-1">متن نوار بالای سایت (Top Banner):</label>
+                        <input
+                          type="text"
+                          value={localCmsConfig.topBannerText}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, topBannerText: e.target.value })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-300 font-bold block mb-1">بج طلایی هدر (Hero Badge):</label>
+                        <input
+                          type="text"
+                          value={localCmsConfig.heroBadgeText}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, heroBadgeText: e.target.value })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="text-slate-300 font-bold block mb-1">تیتر اصلی بالای صفحه (Hero Title):</label>
+                        <input
+                          type="text"
+                          value={localCmsConfig.heroTitle}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, heroTitle: e.target.value })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400 font-bold"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="text-slate-300 font-bold block mb-1">توضیحات زیر تیتر اصلی (Hero Subtitle):</label>
+                        <textarea
+                          rows={2}
+                          value={localCmsConfig.heroSubtitle}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, heroSubtitle: e.target.value })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-300 font-bold block mb-1">عنوان بخش ویترین کاتالوگ:</label>
+                        <input
+                          type="text"
+                          value={localCmsConfig.catalogTitle}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, catalogTitle: e.target.value })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-300 font-bold block mb-1">زیرعنوان بخش ویترین کاتالوگ:</label>
+                        <input
+                          type="text"
+                          value={localCmsConfig.catalogSubtitle}
+                          onChange={(e) => setLocalCmsConfig({ ...localCmsConfig, catalogSubtitle: e.target.value })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* MODAL FOR EDITING SLIDER ITEM */}
+                {editingSlider && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md font-['Vazirmatn']">
+                    <div className="bg-slate-900 border border-yellow-400/50 rounded-3xl p-6 max-w-lg w-full text-white space-y-4 shadow-2xl">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <h4 className="font-extrabold text-sm flex items-center gap-2">
+                          <Edit3 className="w-4 h-4 text-yellow-400" />
+                          <span>{isNewSlider ? 'افزودن اسلایدر جدید' : 'ویرایش اسلایدر'}</span>
+                        </h4>
+                        <button onClick={() => setEditingSlider(null)} className="text-slate-400 hover:text-white">
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-3 text-xs">
+                        <div>
+                          <label className="text-slate-400 block mb-1">عنوان اسلایدر:</label>
+                          <input
+                            type="text"
+                            value={editingSlider.title}
+                            onChange={(e) => setEditingSlider({ ...editingSlider, title: e.target.value })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-slate-400 block mb-1">زیرعنوان و توضیحات:</label>
+                          <input
+                            type="text"
+                            value={editingSlider.subtitle || ''}
+                            onChange={(e) => setEditingSlider({ ...editingSlider, subtitle: e.target.value })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-slate-400 block mb-1">آدرس تصویر (Image URL):</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={editingSlider.image}
+                              onChange={(e) => setEditingSlider({ ...editingSlider, image: e.target.value })}
+                              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400 font-mono text-[11px]"
+                              dir="ltr"
+                            />
+                            <label className="bg-slate-800 hover:bg-slate-700 text-yellow-400 border border-slate-700 p-2.5 rounded-xl cursor-pointer flex items-center justify-center shrink-0">
+                              <Upload className="w-4 h-4" />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    try {
+                                      const res = await optimizeAndCropImage(file, 1200, 600, 'cover', 0.82);
+                                      setEditingSlider({ ...editingSlider, image: res.dataUrl });
+                                    } catch (err: any) {
+                                      alert('خطا در بارگذاری عکس: ' + err.message);
+                                    }
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-slate-400 block mb-1">متن نشان (Badge):</label>
+                            <input
+                              type="text"
+                              value={editingSlider.badgeText || ''}
+                              onChange={(e) => setEditingSlider({ ...editingSlider, badgeText: e.target.value })}
+                              placeholder="مثلاً: ویژه ستاره"
+                              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-slate-400 block mb-1">لینک هدف:</label>
+                            <input
+                              type="text"
+                              value={editingSlider.link || ''}
+                              onChange={(e) => setEditingSlider({ ...editingSlider, link: e.target.value })}
+                              placeholder="/#catalog"
+                              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400 font-mono"
+                              dir="ltr"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+                        <button
+                          onClick={() => setEditingSlider(null)}
+                          className="bg-slate-800 text-slate-300 text-xs px-4 py-2 rounded-xl"
+                        >
+                          انصراف
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const current = localCmsConfig.heroSliders || [];
+                            const updated = isNewSlider
+                              ? [...current, editingSlider]
+                              : current.map((s) => (s.id === editingSlider.id ? editingSlider : s));
+                            setLocalCmsConfig({ ...localCmsConfig, heroSliders: updated });
+                            setEditingSlider(null);
+                          }}
+                          className="bg-yellow-400 text-slate-950 font-black text-xs px-5 py-2 rounded-xl shadow"
+                        >
+                          ذخیره اسلایدر
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* MODAL FOR EDITING PROMO ITEM */}
+                {editingPromo && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md font-['Vazirmatn']">
+                    <div className="bg-slate-900 border border-yellow-400/50 rounded-3xl p-6 max-w-lg w-full text-white space-y-4 shadow-2xl">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <h4 className="font-extrabold text-sm flex items-center gap-2">
+                          <Edit3 className="w-4 h-4 text-yellow-400" />
+                          <span>{isNewPromo ? 'افزودن بنر تبلیغاتی جدید' : 'ویرایش بنر تبلیغاتی'}</span>
+                        </h4>
+                        <button onClick={() => setEditingPromo(null)} className="text-slate-400 hover:text-white">
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-3 text-xs">
+                        <div>
+                          <label className="text-slate-400 block mb-1">عنوان بنر:</label>
+                          <input
+                            type="text"
+                            value={editingPromo.title}
+                            onChange={(e) => setEditingPromo({ ...editingPromo, title: e.target.value })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-slate-400 block mb-1">توضیحات کوتاه:</label>
+                          <input
+                            type="text"
+                            value={editingPromo.subtitle || ''}
+                            onChange={(e) => setEditingPromo({ ...editingPromo, subtitle: e.target.value })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-slate-400 block mb-1">آدرس تصویر بنر:</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={editingPromo.image}
+                              onChange={(e) => setEditingPromo({ ...editingPromo, image: e.target.value })}
+                              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white focus:outline-none focus:border-yellow-400 font-mono text-[11px]"
+                              dir="ltr"
+                            />
+                            <label className="bg-slate-800 hover:bg-slate-700 text-yellow-400 border border-slate-700 p-2.5 rounded-xl cursor-pointer flex items-center justify-center shrink-0">
+                              <Upload className="w-4 h-4" />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    try {
+                                      const res = await optimizeAndCropImage(file, 800, 400, 'cover', 0.82);
+                                      setEditingPromo({ ...editingPromo, image: res.dataUrl });
+                                    } catch (err: any) {
+                                      alert('خطا در بارگذاری عکس: ' + err.message);
+                                    }
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+                        <button
+                          onClick={() => setEditingPromo(null)}
+                          className="bg-slate-800 text-slate-300 text-xs px-4 py-2 rounded-xl"
+                        >
+                          انصراف
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const current = localCmsConfig.promoBanners || [];
+                            const updated = isNewPromo
+                              ? [...current, editingPromo]
+                              : current.map((p) => (p.id === editingPromo.id ? editingPromo : p));
+                            setLocalCmsConfig({ ...localCmsConfig, promoBanners: updated });
+                            setEditingPromo(null);
+                          }}
+                          className="bg-yellow-400 text-slate-950 font-black text-xs px-5 py-2 rounded-xl shadow"
+                        >
+                          ذخیره بنر
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               </div>
             )}
 

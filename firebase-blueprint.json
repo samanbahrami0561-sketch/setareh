@@ -119,6 +119,25 @@
         "createdAt": { "type": "string" }
       },
       "required": ["productId", "productName", "phone", "status", "createdAt"]
+    },
+    "site_config": {
+      "title": "site_config",
+      "description": "Dynamic CMS site settings, contact info, banners, and CTA buttons",
+      "type": "object",
+      "properties": {
+        "topBannerText": { "type": "string" },
+        "storePhone": { "type": "string" },
+        "storePhone2": { "type": "string" },
+        "workingHours": { "type": "string" },
+        "heroTitle": { "type": "string" },
+        "heroSubtitle": { "type": "string" },
+        "heroBannerImage": { "type": "string" },
+        "storeAddress": { "type": "string" },
+        "instagramHandle": { "type": "string" },
+        "telegramHandle": { "type": "string" },
+        "whatsappNumber": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
     }
   },
   "firestore": {
@@ -137,6 +156,10 @@
     "/stock_notifications/{notificationId}": {
       "schema": "stock_notifications",
       "description": "Customer SMS back-in-stock alerts"
+    },
+    "/site_config/{configId}": {
+      "schema": "site_config",
+      "description": "Global website configuration and banner sliders"
     }
   }
 }

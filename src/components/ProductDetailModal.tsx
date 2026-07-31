@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Product } from '../types';
+import { Product, UserAccount } from '../types';
 import { STORE_PRODUCTS } from '../data/products';
 import { OfferCountdown } from './OfferCountdown';
+import { ProductReviewsAndQA } from './ProductReviewsAndQA';
+import { SEOHead } from './SEOHead';
 import { 
   X, 
   ShoppingBag, 
@@ -32,7 +34,8 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
-  Move
+  Move,
+  PhoneCall
 } from 'lucide-react';
 
 interface ProductDetailModalProps {
@@ -44,6 +47,8 @@ interface ProductDetailModalProps {
   onOpenStockNotify?: (product: Product) => void;
   allProducts?: Product[];
   onSelectProduct?: (product: Product) => void;
+  currentUser?: UserAccount | null;
+  onOpenPriceInquiry?: (product: Product) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -54,7 +59,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   userPhone = '',
   onOpenStockNotify,
   allProducts = STORE_PRODUCTS,
-  onSelectProduct
+  onSelectProduct,
+  currentUser,
+  onOpenPriceInquiry
 }) => {
   if (!product) return null;
 
@@ -267,6 +274,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
+      <SEOHead product={product} />
       <div ref={modalRef} className="relative w-full max-w-3xl bg-white border-2 border-slate-200 shadow-2xl overflow-hidden my-8 text-right transition-all">
         
         {/* Header Action Buttons */}
@@ -500,6 +508,28 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
               </div>
 
+              {/* Direct Fast Inquiry Banner Button */}
+              {!isOutOfStock && (
+                <button
+                  onClick={() => {
+                    if (onOpenPriceInquiry) {
+                      onOpenPriceInquiry(product);
+                    } else {
+                      window.open(`https://wa.me/989131234567?text=${encodeURIComponent(`سلام، استعلام قیمت روز محصول ${product.persianName}`)}`, '_blank');
+                    }
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 px-3 rounded-xl transition flex items-center justify-between shadow-sm cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <PhoneCall className="w-4 h-4 animate-bounce text-white" />
+                    <span>استعلام قیمت لحظه‌ای و تماس مستقیم با فروشگاه</span>
+                  </div>
+                  <span className="bg-white/20 px-2 py-0.5 rounded-lg text-[11px] font-mono dir-ltr">
+                    ۰۳۱-۵۲۴۱۵۷۵۹
+                  </span>
+                </button>
+              )}
+
               <div className="flex items-center gap-2">
                 <div className="grid grid-cols-2 gap-2 flex-1">
                   {isOutOfStock ? (
@@ -510,7 +540,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                           onOpenStockNotify(product);
                         }
                       }}
-                      className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs py-3 uppercase tracking-wider transition shadow-sm rounded-lg"
+                      className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs py-3 uppercase tracking-wider transition shadow-sm rounded-lg cursor-pointer"
                     >
                       <Bell className="w-4 h-4 text-slate-950 animate-bounce" />
                       <span>خبرم کن (پیامکی)</span>
@@ -521,7 +551,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                         onAddToCart(product, selectedColor);
                         onClose();
                       }}
-                      className="flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-800 text-white font-black text-xs py-3 uppercase tracking-wider transition shadow-sm rounded-lg"
+                      className="flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-800 text-white font-black text-xs py-3 uppercase tracking-wider transition shadow-sm rounded-lg cursor-pointer"
                     >
                       <ShoppingBag className="w-4 h-4 text-yellow-400" />
                       <span>افزودن به سبد خرید</span>
@@ -533,7 +563,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       onClose();
                       onOpenInstallmentForProduct(product.priceToman);
                     }}
-                    className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border-2 border-slate-950 text-slate-950 font-extrabold text-xs py-3 transition rounded-lg"
+                    className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border-2 border-slate-950 text-slate-950 font-extrabold text-xs py-3 transition rounded-lg cursor-pointer"
                   >
                     <CreditCard className="w-4 h-4 text-slate-950" />
                     <span>محاسبه اقساط کالا</span>
@@ -542,7 +572,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
                 <button
                   onClick={handleShare}
-                  className="p-3 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 rounded-lg transition flex items-center justify-center shrink-0"
+                  className="p-3 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 rounded-lg transition flex items-center justify-center shrink-0 cursor-pointer"
                   title="اشتراک‌گذاری این محصول"
                 >
                   {shareCopied ? (
@@ -653,6 +683,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             </div>
           </div>
         )}
+
+        {/* Reviews, Star Ratings & Q&A Section */}
+        <div className="p-4 sm:p-6 bg-slate-50/50 dark:bg-slate-900/50">
+          <ProductReviewsAndQA product={product} currentUser={currentUser} />
+        </div>
 
       </div>
 

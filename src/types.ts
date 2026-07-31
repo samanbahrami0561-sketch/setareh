@@ -166,9 +166,20 @@ export interface UserAccount {
   referralCode?: string;
 }
 
+export interface BannerItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  image: string;
+  link?: string;
+  badgeText?: string;
+  isActive?: boolean;
+}
+
 export interface SiteContentConfig {
   topBannerText: string;
   storePhone: string;
+  storePhone2?: string;
   workingHours: string;
   isOpenNow: boolean;
   heroTitle: string;
@@ -189,7 +200,16 @@ export interface SiteContentConfig {
   catalogSubtitle: string;
   storeAddress: string;
   instagramHandle: string;
+  telegramHandle?: string;
   whatsappNumber: string;
+  neshanMapLink?: string;
+  baladMapLink?: string;
+  googleMapsLink?: string;
+  productCtaMode?: 'inquiry_modal' | 'whatsapp' | 'phone' | 'custom_link';
+  productCtaButtonText?: string;
+  productCtaCustomLink?: string;
+  heroSliders?: BannerItem[];
+  promoBanners?: BannerItem[];
 }
 
 export interface InstallmentCalcResult {
